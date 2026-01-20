@@ -1,0 +1,332 @@
+package agent
+
+import (
+	"context"
+	"deepknowledgesearch/llm"
+	"deepknowledgesearch/mcp"
+	"encoding/json"
+	"fmt"
+	"strings"
+)
+
+// TaskPlanner 任务规划器
+type TaskPlanner struct {
+	maxDepth int
+}
+
+// NewTaskPlanner 创建任务规划器
+func NewTaskPlanner() *TaskPlanner {
+	return &TaskPlanner{
+		maxDepth: DefaultMaxDepth,
+	}
+}
+
+// SetMaxDepth 设置最大递归深度
+func (p *TaskPlanner) SetMaxDepth(depth int) {
+	p.maxDepth = depth
+}
+
+// ============================================================================
+// 规划结果结构
+// ============================================================================
+
+// NodePlanningResult 节点规划结果
+type NodePlanningResult struct {
+	Title         string        `json:"title"`
+	Goal          string        `json:"goal"`
+	ExecutionMode ExecutionMode `json:"execution_mode"`
+	SubTasks      []SubTaskPlan `json:"subtasks"`
+	Reasoning     string        `json:"reasoning"`
+}
+
+// SubTaskPlan 子任务规划
+type SubTaskPlan struct {
+	Title        string   `json:"title"`
+	Description  string   `json:"description"`
+	Goal         string   `json:"goal"`
+	Tools        []string `json:"tools"`
+	CanDecompose bool     `json:"can_decompose"`
+}
+
+// ============================================================================
+// 规划方法
+// ============================================================================
+
+// PlanNode 规划任务节点
+func (p *TaskPlanner) PlanNode(ctx context.Context, node *TaskNode) (*NodePlanningResult, error) {
+	// 获取可用工具列表
+	tools := p.getAvailableToolsDescription()
+
+	// 构建上下文
+	contextStr := node.Context.BuildLLMContext()
+
+	// 构建 prompt
+	prompt := BuildNodePlanningPrompt(
+		node.Title,
+		node.Description,
+		node.Goal,
+		contextStr,
+		tools,
+	)
+
+	// 调用 LLM
+	messages := []llm.Message{
+		{Role: "system", Content: PromptPlanningSystem},
+		{Role: "user", Content: prompt},
+	}
+
+	response, err := llm.SendSyncLLMRequest(messages)
+	if err != nil {
+		return nil, fmt.Errorf("LLM 规划失败: %w", err)
+	}
+
+	// 解析 JSON 响应
+	result, err := p.parsePlanningResponse(response)
+	if err != nil {
+		// 如果解析失败，返回空子任务（直接执行）
+		node.AddLog(LogWarn, "planning", fmt.Sprintf("规划响应解析失败，直接执行: %v", err))
+		return &NodePlanningResult{
+			Title:         node.Title,
+			Goal:          node.Goal,
+			ExecutionMode: ModeSequential,
+			SubTasks:      []SubTaskPlan{},
+		}, nil
+	}
+
+	return result, nil
+}
+
+// ExecuteNode 执行任务节点
+func (p *TaskPlanner) ExecuteNode(ctx context.Context, node *TaskNode) (*TaskResult, error) {
+	// 构建上下文
+	contextStr := node.Context.BuildLLMContext()
+
+	// 构建 prompt
+	prompt := BuildNodeExecutionPrompt(
+		node.Title,
+		node.Description,
+		node.Goal,
+		contextStr,
+	)
+
+	// 调用 LLM（带工具）
+	messages := []llm.Message{
+		{Role: "system", Content: PromptExecutionSystem},
+		{Role: "user", Content: prompt},
+	}
+
+	response, err := llm.SendSyncLLMRequest(messages)
+	if err != nil {
+		return nil, fmt.Errorf("LLM 执行失败: %w", err)
+	}
+
+	// 生成摘要
+	summary := p.summarizeResponse(response)
+
+	return NewTaskResult(response, summary), nil
+}
+
+// SynthesizeResults 整合子任务结果
+func (p *TaskPlanner) SynthesizeResults(ctx context.Context, node *TaskNode, summaries []string) (string, error) {
+	if len(summaries) == 0 {
+		return "无子任务结果", nil
+	}
+
+	childResults := strings.Join(summaries, "\n")
+
+	prompt := BuildResultSynthesisPrompt(
+		node.Title,
+		node.Goal,
+		childResults,
+	)
+
+	messages := []llm.Message{
+		{Role: "system", Content: "你是一个结果整合专家。"},
+		{Role: "user", Content: prompt},
+	}
+
+	response, err := llm.SendSyncLLMRequest(messages)
+	if err != nil {
+		return childResults, err
+	}
+
+	return response, nil
+}
+
+// VerificationResult 验证结果
+type VerificationResult struct {
+	Passed      bool   `json:"passed"`
+	Feedback    string `json:"feedback"`
+	Suggestions string `json:"suggestions"`
+}
+
+// VerifyResult 验证任务执行结果（迭代验证直到通过）
+func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result string) (*VerificationResult, error) {
+	const maxVerificationIterations = 5
+	currentResult := result
+
+	for iteration := 0; iteration < maxVerificationIterations; iteration++ {
+		Display.ShowMessage("🔍", fmt.Sprintf("验证任务结果 (第 %d 次)...", iteration+1))
+		node.AddLog(LogInfo, "verification", fmt.Sprintf("开始第 %d 次验证", iteration+1))
+
+		// 构建验证 prompt
+		prompt := BuildVerificationPrompt(
+			node.Title,
+			node.Goal,
+			currentResult,
+		)
+
+		messages := []llm.Message{
+			{Role: "system", Content: PromptVerificationSystem},
+			{Role: "user", Content: prompt},
+		}
+
+		response, err := llm.SendSyncLLMRequest(messages)
+		if err != nil {
+			return nil, fmt.Errorf("验证调用失败: %w", err)
+		}
+
+		// 检查是否通过验证
+		if strings.Contains(response, "VERIFICATION_PASSED") {
+			Display.ShowMessage("✅", "验证通过!")
+			node.AddLog(LogInfo, "verification", "验证通过")
+			return &VerificationResult{
+				Passed:   true,
+				Feedback: response,
+			}, nil
+		}
+
+		// 验证未通过，记录反馈
+		Display.ShowMessage("⚠️", fmt.Sprintf("验证未通过，需要改进 (第 %d 次)", iteration+1))
+		node.AddLog(LogWarn, "verification", fmt.Sprintf("验证未通过: %s", p.summarizeResponse(response)))
+
+		// 如果还有迭代机会，尝试改进
+		if iteration < maxVerificationIterations-1 {
+			// 让 LLM 根据反馈改进结果
+			improvePrompt := fmt.Sprintf(`根据以下验证反馈改进任务结果。
+
+## 原始任务
+标题: %s
+目标: %s
+
+## 当前结果
+%s
+
+## 验证反馈
+%s
+
+请根据反馈改进结果，确保满足任务目标。`, node.Title, node.Goal, currentResult, response)
+
+			improveMessages := []llm.Message{
+				{Role: "system", Content: PromptExecutionSystem},
+				{Role: "user", Content: improvePrompt},
+			}
+
+			improvedResult, err := llm.SendSyncLLMRequest(improveMessages)
+			if err != nil {
+				node.AddLog(LogError, "verification", fmt.Sprintf("改进失败: %v", err))
+				continue
+			}
+
+			currentResult = improvedResult
+			node.AddLog(LogInfo, "verification", "已根据反馈改进结果")
+		}
+	}
+
+	// 达到最大迭代次数仍未通过
+	return &VerificationResult{
+		Passed:      false,
+		Feedback:    "达到最大验证次数，验证未通过",
+		Suggestions: "请检查任务目标设定是否合理",
+	}, nil
+}
+
+// ============================================================================
+// 辅助方法
+// ============================================================================
+
+// getAvailableToolsDescription 获取可用工具描述
+func (p *TaskPlanner) getAvailableToolsDescription() string {
+	tools := mcp.GetAvailableLLMTools()
+	if len(tools) == 0 {
+		return "无可用工具"
+	}
+
+	var sb strings.Builder
+	for _, tool := range tools {
+		sb.WriteString(fmt.Sprintf("- %s: %s\n", tool.Function.Name, tool.Function.Description))
+	}
+	return sb.String()
+}
+
+// parsePlanningResponse 解析规划响应
+func (p *TaskPlanner) parsePlanningResponse(response string) (*NodePlanningResult, error) {
+	// 清理 JSON
+	cleaned := cleanJSONResponse(response)
+
+	var result NodePlanningResult
+	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
+		return nil, fmt.Errorf("JSON 解析失败: %w, 原始响应: %s", err, cleaned)
+	}
+
+	return &result, nil
+}
+
+// summarizeResponse 生成响应摘要
+func (p *TaskPlanner) summarizeResponse(response string) string {
+	// 简单截断作为摘要
+	runes := []rune(response)
+	if len(runes) > 100 {
+		return string(runes[:100]) + "..."
+	}
+	return response
+}
+
+// cleanJSONResponse 清理 JSON 响应
+func cleanJSONResponse(response string) string {
+	// 移除 markdown 代码块标记
+	response = strings.TrimPrefix(response, "```json")
+	response = strings.TrimPrefix(response, "```")
+	response = strings.TrimSuffix(response, "```")
+	response = strings.TrimSpace(response)
+
+	// 尝试找到 JSON 开始和结束位置
+	start := strings.Index(response, "{")
+	end := strings.LastIndex(response, "}")
+	if start != -1 && end != -1 && end > start {
+		return response[start : end+1]
+	}
+
+	return response
+}
+
+// ============================================================================
+// 旧 API 兼容
+// ============================================================================
+
+// ExecuteTask 执行任务（旧 API，使用新的执行器）
+func (p *TaskPlanner) ExecuteTask(description string) (string, error) {
+	// 创建根节点
+	node := NewTaskNode("用户任务", description)
+	node.Goal = "完成用户请求的任务"
+
+	// 创建执行配置
+	config := DefaultExecutionConfig()
+	config.MaxDepth = p.maxDepth
+
+	// 创建执行器
+	executor := NewTaskExecutor(node, p, config)
+
+	// 执行
+	if err := executor.Execute(); err != nil {
+		return "", err
+	}
+
+	// 返回结果
+	if node.Result != nil {
+		Display.ShowResult(node.Result.Summary)
+		return node.Result.Summary, nil
+	}
+
+	return "任务已完成", nil
+}
