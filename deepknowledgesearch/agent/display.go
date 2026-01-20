@@ -101,6 +101,14 @@ func (d *ConsoleDisplay) ShowSubtasks(subtasks []SubTaskPlan, mode ExecutionMode
 	})
 }
 
+// BroadcastTree 广播完整任务树到前端
+func (d *ConsoleDisplay) BroadcastTree(rootNode *TaskNode) {
+	if rootNode == nil {
+		return
+	}
+	web.BroadcastEvent("tree_update", buildNodeData(rootNode))
+}
+
 // ShowMessage 显示消息
 func (d *ConsoleDisplay) ShowMessage(icon string, message string) {
 	fmt.Printf("   %s %s\n", icon, message)
@@ -134,11 +142,59 @@ func (d *ConsoleDisplay) ShowResult(result string) {
 // buildNodeData 构建节点数据用于广播
 func buildNodeData(node *TaskNode) map[string]interface{} {
 	data := map[string]interface{}{
-		"id":     node.ID,
-		"title":  node.Title,
-		"status": string(node.Status),
-		"depth":  node.Depth,
+		"id":          node.ID,
+		"parent_id":   node.ParentID,
+		"title":       node.Title,
+		"description": node.Description,
+		"goal":        node.Goal,
+		"status":      string(node.Status),
+		"depth":       node.Depth,
 	}
+
+	// 添加 LLM 调用记录
+	if len(node.LLMCalls) > 0 {
+		llmCalls := make([]map[string]interface{}, 0, len(node.LLMCalls))
+		for _, call := range node.LLMCalls {
+			llmCalls = append(llmCalls, map[string]interface{}{
+				"type":        call.Type,
+				"messages":    call.Messages,
+				"response":    call.Response,
+				"start_time":  call.StartTime.Format("15:04:05"),
+				"duration_ms": call.DurationMs,
+			})
+		}
+		data["llm_calls"] = llmCalls
+	}
+
+	// 添加结果
+	if node.Result != nil {
+		data["result"] = map[string]interface{}{
+			"success": node.Result.Success,
+			"summary": node.Result.Summary,
+			"output":  node.Result.Output,
+			"error":   node.Result.Error,
+		}
+	}
+
+	// 添加验证信息
+	if node.Verification != nil {
+		attempts := make([]map[string]interface{}, 0, len(node.Verification.Attempts))
+		for _, attempt := range node.Verification.Attempts {
+			attempts = append(attempts, map[string]interface{}{
+				"iteration": attempt.Iteration,
+				"passed":    attempt.Passed,
+				"feedback":  attempt.Feedback,
+				"timestamp": attempt.Timestamp,
+			})
+		}
+		data["verification"] = map[string]interface{}{
+			"passed":     node.Verification.Passed,
+			"iterations": node.Verification.Iterations,
+			"attempts":   attempts,
+		}
+	}
+
+	// 递归处理子节点
 	if len(node.Children) > 0 {
 		children := make([]map[string]interface{}, 0, len(node.Children))
 		for _, child := range node.Children {

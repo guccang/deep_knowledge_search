@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // TaskPlanner 任务规划器
@@ -75,7 +76,19 @@ func (p *TaskPlanner) PlanNode(ctx context.Context, node *TaskNode) (*NodePlanni
 		{Role: "user", Content: prompt},
 	}
 
+	// 记录开始时间
+	startTime := time.Now()
+
 	response, err := llm.SendSyncLLMRequest(messages)
+
+	// 计算耗时并记录 LLM 调用
+	durationMs := time.Since(startTime).Milliseconds()
+	llmMessages := []map[string]interface{}{
+		{"role": "system", "content": PromptPlanningSystem},
+		{"role": "user", "content": prompt},
+	}
+	node.AddLLMCall("plan", llmMessages, response, startTime, durationMs)
+
 	if err != nil {
 		return nil, fmt.Errorf("LLM 规划失败: %w", err)
 	}
@@ -115,7 +128,19 @@ func (p *TaskPlanner) ExecuteNode(ctx context.Context, node *TaskNode) (*TaskRes
 		{Role: "user", Content: prompt},
 	}
 
+	// 记录开始时间
+	startTime := time.Now()
+
 	response, err := llm.SendSyncLLMRequest(messages)
+
+	// 计算耗时并记录 LLM 调用
+	durationMs := time.Since(startTime).Milliseconds()
+	llmMessages := []map[string]interface{}{
+		{"role": "system", "content": PromptExecutionSystem},
+		{"role": "user", "content": prompt},
+	}
+	node.AddLLMCall("execute", llmMessages, response, startTime, durationMs)
+
 	if err != nil {
 		return nil, fmt.Errorf("LLM 执行失败: %w", err)
 	}
@@ -145,7 +170,19 @@ func (p *TaskPlanner) SynthesizeResults(ctx context.Context, node *TaskNode, sum
 		{Role: "user", Content: prompt},
 	}
 
+	// 记录开始时间
+	startTime := time.Now()
+
 	response, err := llm.SendSyncLLMRequest(messages)
+
+	// 计算耗时并记录 LLM 调用
+	durationMs := time.Since(startTime).Milliseconds()
+	llmMessages := []map[string]interface{}{
+		{"role": "system", "content": "你是一个结果整合专家。"},
+		{"role": "user", "content": prompt},
+	}
+	node.AddLLMCall("synthesize", llmMessages, response, startTime, durationMs)
+
 	if err != nil {
 		return childResults, err
 	}
@@ -165,6 +202,13 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 	const maxVerificationIterations = 5
 	currentResult := result
 
+	// 初始化验证信息
+	node.Verification = &VerificationInfo{
+		Passed:     false,
+		Iterations: 0,
+		Attempts:   []VerificationAttempt{},
+	}
+
 	for iteration := 0; iteration < maxVerificationIterations; iteration++ {
 		Display.ShowMessage("🔍", fmt.Sprintf("验证任务结果 (第 %d 次)...", iteration+1))
 		node.AddLog(LogInfo, "verification", fmt.Sprintf("开始第 %d 次验证", iteration+1))
@@ -181,8 +225,29 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 			{Role: "user", Content: prompt},
 		}
 
+		// 记录开始时间
+		startTime := time.Now()
+
 		response, err := llm.SendSyncLLMRequest(messages)
+
+		// 记录 LLM 调用
+		durationMs := time.Since(startTime).Milliseconds()
+		llmMessages := []map[string]interface{}{
+			{"role": "system", "content": PromptVerificationSystem},
+			{"role": "user", "content": prompt},
+		}
+		node.AddLLMCall("verify", llmMessages, response, startTime, durationMs)
+
 		if err != nil {
+			// 记录验证尝试（失败）
+			node.Verification.Attempts = append(node.Verification.Attempts, VerificationAttempt{
+				Iteration: iteration + 1,
+				Passed:    false,
+				Feedback:  fmt.Sprintf("验证调用失败: %v", err),
+				Timestamp: time.Now().Format("15:04:05"),
+			})
+			node.Verification.Iterations = iteration + 1
+			Display.BroadcastTree(findRootNode(node))
 			return nil, fmt.Errorf("验证调用失败: %w", err)
 		}
 
@@ -190,6 +255,18 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 		if strings.Contains(response, "VERIFICATION_PASSED") {
 			Display.ShowMessage("✅", "验证通过!")
 			node.AddLog(LogInfo, "verification", "验证通过")
+
+			// 记录验证通过
+			node.Verification.Passed = true
+			node.Verification.Iterations = iteration + 1
+			node.Verification.Attempts = append(node.Verification.Attempts, VerificationAttempt{
+				Iteration: iteration + 1,
+				Passed:    true,
+				Feedback:  p.summarizeResponse(response),
+				Timestamp: time.Now().Format("15:04:05"),
+			})
+			Display.BroadcastTree(findRootNode(node))
+
 			return &VerificationResult{
 				Passed:   true,
 				Feedback: response,
@@ -199,6 +276,16 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 		// 验证未通过，记录反馈
 		Display.ShowMessage("⚠️", fmt.Sprintf("验证未通过，需要改进 (第 %d 次)", iteration+1))
 		node.AddLog(LogWarn, "verification", fmt.Sprintf("验证未通过: %s", p.summarizeResponse(response)))
+
+		// 记录验证尝试
+		node.Verification.Iterations = iteration + 1
+		node.Verification.Attempts = append(node.Verification.Attempts, VerificationAttempt{
+			Iteration: iteration + 1,
+			Passed:    false,
+			Feedback:  p.summarizeResponse(response),
+			Timestamp: time.Now().Format("15:04:05"),
+		})
+		Display.BroadcastTree(findRootNode(node))
 
 		// 如果还有迭代机会，尝试改进
 		if iteration < maxVerificationIterations-1 {
@@ -239,6 +326,13 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 		Feedback:    "达到最大验证次数，验证未通过",
 		Suggestions: "请检查任务目标设定是否合理",
 	}, nil
+}
+
+// findRootNode 查找根节点（用于广播）
+func findRootNode(node *TaskNode) *TaskNode {
+	// 由于节点只存储 ParentID，无法向上遍历
+	// 这里返回当前节点，实际广播时需要从 executor 获取根节点
+	return node
 }
 
 // ============================================================================

@@ -69,6 +69,16 @@ func (e *TaskExecutor) Execute() error {
 		} else {
 			e.root.AddLog(LogInfo, "verification", "任务验证通过")
 		}
+		// 广播验证完成后的树结构
+		Display.BroadcastTree(e.root)
+	}
+
+	// 生成输出目录的 README 索引
+	outputDir := mcp.GetCurrentOutputDir()
+	if err := GenerateOutputReadme(e.root, outputDir); err != nil {
+		Display.ShowMessage("⚠️", fmt.Sprintf("生成索引失败: %v", err))
+	} else {
+		Display.ShowMessage("📚", fmt.Sprintf("已生成索引: %s/README.md", outputDir))
 	}
 
 	// 保存执行日志
@@ -148,6 +158,9 @@ func (e *TaskExecutor) executeNode(node *TaskNode) error {
 	node.SetProgress(100)
 	node.AddLog(LogInfo, "completed", fmt.Sprintf("执行完成: %s", node.Title))
 	Display.NodeComplete(node)
+
+	// 广播完整树结构确保前端同步
+	Display.BroadcastTree(e.root)
 
 	return nil
 }

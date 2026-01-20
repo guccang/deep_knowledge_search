@@ -59,7 +59,7 @@ func (s *Server) Start() error {
 
 // handleIndex 主页
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	tmpl := template.Must(template.New("index").Parse(indexHTML))
+	tmpl := template.Must(template.New("index").Parse(indexHTMLTree))
 	tmpl.Execute(w, nil)
 }
 
@@ -132,97 +132,260 @@ const indexHTML = `<!DOCTYPE html>
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             color: #e8e8e8;
             min-height: 100vh;
+            overflow: hidden;
         }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
+        .app-container {
+            display: flex;
+            height: 100vh;
+        }
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
             padding: 20px;
+            transition: margin-right 0.3s ease;
+        }
+        .main-content.panel-open {
+            margin-right: 450px;
         }
         header {
             text-align: center;
-            padding: 30px 0;
+            padding: 15px 0;
             border-bottom: 1px solid #2a2a4a;
         }
         h1 {
             color: #4ade80;
-            font-size: 2.5em;
-            margin-bottom: 10px;
+            font-size: 1.8em;
+            margin-bottom: 8px;
         }
         .status-badge {
             display: inline-block;
-            padding: 8px 20px;
+            padding: 6px 16px;
             border-radius: 20px;
             background: #22c55e;
             color: white;
             font-weight: bold;
+            font-size: 0.85em;
         }
         .status-badge.disconnected {
             background: #ef4444;
         }
-        .task-panel {
-            margin-top: 30px;
-            background: rgba(255,255,255,0.05);
+        .graph-container {
+            flex: 1;
+            position: relative;
+            margin: 15px 0;
+            background: rgba(0,0,0,0.2);
             border-radius: 12px;
-            padding: 20px;
             border: 1px solid rgba(255,255,255,0.1);
+            overflow: hidden;
         }
-        .panel-title {
-            font-size: 1.2em;
-            color: #60a5fa;
-            margin-bottom: 15px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .task-tree {
-            font-family: 'Consolas', monospace;
-            background: rgba(0,0,0,0.3);
-            padding: 15px;
-            border-radius: 8px;
-            white-space: pre-wrap;
-            min-height: 100px;
+        #graphCanvas {
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
         }
         .log-panel {
-            margin-top: 20px;
-            max-height: 400px;
+            max-height: 150px;
             overflow-y: auto;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            padding: 10px;
         }
         .log-entry {
-            padding: 8px 12px;
+            padding: 5px 10px;
             border-left: 3px solid #4ade80;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
             background: rgba(0,0,0,0.2);
             border-radius: 0 4px 4px 0;
-            font-size: 0.9em;
+            font-size: 0.85em;
         }
         .log-entry.warn { border-left-color: #fbbf24; }
         .log-entry.error { border-left-color: #ef4444; }
-        .log-time { color: #888; margin-right: 10px; }
+        .log-time { color: #888; margin-right: 8px; }
+        
+        /* Detail Panel */
+        .detail-panel {
+            position: fixed;
+            right: -450px;
+            top: 0;
+            width: 450px;
+            height: 100vh;
+            background: linear-gradient(180deg, #1e1e2e 0%, #181825 100%);
+            border-left: 1px solid #313244;
+            transition: right 0.3s ease;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+        }
+        .detail-panel.open {
+            right: 0;
+        }
+        .panel-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #313244;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0,0,0,0.2);
+        }
+        .panel-header h3 {
+            color: #cdd6f4;
+            font-size: 1.1em;
+        }
+        .close-btn {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 1.5em;
+            cursor: pointer;
+            padding: 5px;
+        }
+        .close-btn:hover {
+            color: #fff;
+        }
+        .panel-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+        .panel-section {
+            margin-bottom: 20px;
+        }
+        .section-title {
+            color: #89b4fa;
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .node-info {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .info-row {
+            display: flex;
+            margin-bottom: 8px;
+        }
+        .info-label {
+            color: #888;
+            width: 80px;
+            flex-shrink: 0;
+        }
+        .info-value {
+            color: #cdd6f4;
+            word-break: break-all;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-pending { background: #888; }
+        .status-running { background: #3b82f6; }
+        .status-done { background: #22c55e; }
+        .status-failed { background: #ef4444; }
+        
+        .llm-call {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+        .llm-call-header {
+            padding: 10px 12px;
+            background: rgba(137,180,250,0.1);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .llm-call-header:hover {
+            background: rgba(137,180,250,0.2);
+        }
+        .llm-type {
+            color: #89b4fa;
+            font-weight: 600;
+        }
+        .llm-duration {
+            color: #888;
+            font-size: 0.85em;
+        }
+        .llm-call-body {
+            display: none;
+            padding: 12px;
+            border-top: 1px solid #313244;
+        }
+        .llm-call-body.open {
+            display: block;
+        }
+        .code-block {
+            background: #11111b;
+            border-radius: 6px;
+            padding: 10px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.8em;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 200px;
+            overflow-y: auto;
+            color: #a6adc8;
+        }
+        .code-block.response {
+            border-left: 3px solid #4ade80;
+        }
+        .code-block.request {
+            border-left: 3px solid #89b4fa;
+        }
+        .sub-label {
+            color: #888;
+            font-size: 0.8em;
+            margin: 8px 0 4px;
+        }
         .empty-state {
             text-align: center;
             color: #666;
             padding: 40px;
         }
+        .graph-hint {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #666;
+            font-size: 0.85em;
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🔍 Deep Knowledge Search</h1>
-            <span id="status" class="status-badge disconnected">连接中...</span>
-        </header>
-        
-        <div class="task-panel">
-            <div class="panel-title">📊 任务结构</div>
-            <div id="taskTree" class="task-tree">
-                <div class="empty-state">等待任务开始...</div>
+    <div class="app-container">
+        <div class="main-content" id="mainContent">
+            <header>
+                <h1>🔍 Deep Knowledge Search</h1>
+                <span id="status" class="status-badge disconnected">连接中...</span>
+            </header>
+            
+            <div class="graph-container">
+                <canvas id="graphCanvas"></canvas>
+                <div class="graph-hint">点击节点查看详情</div>
+            </div>
+            
+            <div class="log-panel" id="logs">
+                <div class="empty-state">暂无日志</div>
             </div>
         </div>
         
-        <div class="task-panel">
-            <div class="panel-title">📋 执行日志</div>
-            <div id="logs" class="log-panel">
-                <div class="empty-state">暂无日志</div>
+        <div class="detail-panel" id="detailPanel">
+            <div class="panel-header">
+                <h3 id="panelTitle">节点详情</h3>
+                <button class="close-btn" onclick="closePanel()">×</button>
+            </div>
+            <div class="panel-content" id="panelContent">
             </div>
         </div>
     </div>
@@ -230,24 +393,54 @@ const indexHTML = `<!DOCTYPE html>
     <script>
         let ws;
         const statusEl = document.getElementById('status');
-        const taskTreeEl = document.getElementById('taskTree');
         const logsEl = document.getElementById('logs');
-        let logCount = 0;
+        const canvas = document.getElementById('graphCanvas');
+        const ctx = canvas.getContext('2d');
+        const mainContent = document.getElementById('mainContent');
+        const detailPanel = document.getElementById('detailPanel');
+        const panelContent = document.getElementById('panelContent');
+        const panelTitle = document.getElementById('panelTitle');
         
+        let logCount = 0;
+        let taskData = null;
+        let nodes = [];
+        let selectedNode = null;
+        
+        // 颜色配置
+        const colors = {
+            pending: '#6b7280',
+            running: '#3b82f6',
+            done: '#22c55e',
+            failed: '#ef4444',
+            canceled: '#f59e0b',
+            line: '#4a5568',
+            text: '#e8e8e8',
+            bg: '#1e1e2e'
+        };
+        
+        // 初始化 Canvas
+        function resizeCanvas() {
+            const container = canvas.parentElement;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            renderGraph();
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        setTimeout(resizeCanvas, 100);
+        
+        // 连接 WebSocket
         function connect() {
             ws = new WebSocket('ws://' + location.host + '/ws');
-            
             ws.onopen = () => {
                 statusEl.textContent = '已连接';
                 statusEl.classList.remove('disconnected');
             };
-            
             ws.onclose = () => {
                 statusEl.textContent = '已断开';
                 statusEl.classList.add('disconnected');
                 setTimeout(connect, 2000);
             };
-            
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 handleMessage(msg);
@@ -257,29 +450,38 @@ const indexHTML = `<!DOCTYPE html>
         function handleMessage(msg) {
             switch(msg.type) {
                 case 'task_start':
-                    taskTreeEl.innerHTML = '🚀 ' + msg.data.title;
+                    taskData = { title: msg.data.title, status: 'running', children: [] };
                     clearLogs();
                     addLog('info', '任务开始: ' + msg.data.title, msg.time);
+                    renderGraph();
                     break;
                 case 'task_complete':
-                    addLog('info', '✅ 任务完成: ' + msg.data.title, msg.time);
+                    if (taskData) taskData.status = 'done';
+                    addLog('info', '✅ 任务完成', msg.time);
+                    renderGraph();
                     break;
                 case 'task_failed':
+                    if (taskData) taskData.status = 'failed';
                     addLog('error', '❌ 任务失败: ' + msg.data.error, msg.time);
+                    renderGraph();
                     break;
                 case 'node_start':
-                    updateTree(msg.data);
-                    addLog('info', '▶ 开始: ' + msg.data.title, msg.time);
-                    break;
                 case 'node_complete':
-                    updateTree(msg.data);
-                    addLog('info', '✓ 完成: ' + msg.data.title, msg.time);
-                    break;
                 case 'node_failed':
-                    addLog('error', '✗ 失败: ' + msg.data.title, msg.time);
+                    updateTaskData(msg.data);
+                    addLog(msg.type === 'node_failed' ? 'error' : 'info', 
+                           (msg.type === 'node_start' ? '▶ ' : msg.type === 'node_complete' ? '✓ ' : '✗ ') + msg.data.title, 
+                           msg.time);
+                    renderGraph();
                     break;
-                case 'subtasks':
-                    addLog('info', '📋 分解为 ' + msg.data.count + ' 个子任务', msg.time);
+                case 'node_data':
+                    updateTaskData(msg.data);
+                    renderGraph();
+                    break;
+                case 'tree_update':
+                    // 完整树更新，直接替换
+                    taskData = msg.data;
+                    renderGraph();
                     break;
                 case 'log':
                     addLog(msg.data.level, msg.data.message, msg.time);
@@ -287,23 +489,288 @@ const indexHTML = `<!DOCTYPE html>
             }
         }
         
-        function updateTree(node) {
-            let html = buildTree(node, 0);
-            taskTreeEl.innerHTML = html || '<div class="empty-state">等待任务开始...</div>';
+        function updateTaskData(nodeData) {
+            if (!taskData) {
+                taskData = nodeData;
+            } else if (!taskData.id) {
+                // task_start 创建的临时数据没有 id，用第一个完整节点替换
+                if (nodeData.depth === 0) {
+                    taskData = nodeData;
+                } else {
+                    // 如果是子节点，需要等待根节点
+                    mergeNodeData(taskData, nodeData);
+                }
+            } else {
+                mergeNodeData(taskData, nodeData);
+            }
         }
         
-        function buildTree(node, depth) {
-            let indent = '  '.repeat(depth);
-            let icon = node.status === 'done' ? '✅' : 
-                       node.status === 'running' ? '🔄' : 
-                       node.status === 'failed' ? '❌' : '⏳';
-            let html = indent + icon + ' ' + node.title + '\n';
-            if (node.children) {
-                for (let child of node.children) {
-                    html += buildTree(child, depth + 1);
+        function mergeNodeData(target, source) {
+            // 1. 如果 ID 匹配，更新节点
+            if (target.id === source.id) {
+                // 保留已有的 children
+                const existingChildren = target.children || [];
+                Object.assign(target, source);
+                // 合并 children（source 可能有新的 children 信息）
+                if (source.children && source.children.length > 0) {
+                    target.children = source.children;
+                } else if (existingChildren.length > 0) {
+                    target.children = existingChildren;
+                }
+                return true;
+            }
+            
+            // 2. 检查是否应该添加为 target 的直接子节点
+            if (source.parent_id === target.id) {
+                if (!target.children) target.children = [];
+                const existing = target.children.find(c => c.id === source.id);
+                if (existing) {
+                    // 保留已有的 children
+                    const existingChildren = existing.children || [];
+                    Object.assign(existing, source);
+                    if (!source.children && existingChildren.length > 0) {
+                        existing.children = existingChildren;
+                    }
+                } else {
+                    target.children.push(source);
+                }
+                return true;
+            }
+            
+            // 3. 递归搜索所有子节点
+            if (target.children) {
+                for (let i = 0; i < target.children.length; i++) {
+                    if (mergeNodeData(target.children[i], source)) return true;
                 }
             }
-            return html;
+            
+            return false;
+        }
+        
+        // 图形渲染
+        function renderGraph() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            nodes = [];
+            
+            if (!taskData) {
+                ctx.fillStyle = '#666';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('等待任务开始...', canvas.width / 2, canvas.height / 2);
+                return;
+            }
+            
+            // 计算布局
+            const layout = calculateLayout(taskData, canvas.width, canvas.height);
+            
+            // 绘制连线
+            drawConnections(layout);
+            
+            // 绘制节点
+            drawNodes(layout);
+        }
+        
+        function calculateLayout(node, width, height) {
+            const nodeWidth = 140;
+            const nodeHeight = 50;
+            const levelHeight = 90;
+            const result = [];
+            
+            function countLeaves(n) {
+                if (!n.children || n.children.length === 0) return 1;
+                return n.children.reduce((sum, c) => sum + countLeaves(c), 0);
+            }
+            
+            function layoutNode(n, level, xStart, xEnd) {
+                const x = (xStart + xEnd) / 2;
+                const y = 40 + level * levelHeight;
+                
+                result.push({
+                    node: n,
+                    x: x,
+                    y: y,
+                    width: nodeWidth,
+                    height: nodeHeight
+                });
+                
+                if (n.children && n.children.length > 0) {
+                    const totalLeaves = countLeaves(n);
+                    let currentX = xStart;
+                    
+                    for (const child of n.children) {
+                        const childLeaves = countLeaves(child);
+                        const childWidth = (xEnd - xStart) * (childLeaves / totalLeaves);
+                        layoutNode(child, level + 1, currentX, currentX + childWidth);
+                        currentX += childWidth;
+                    }
+                }
+            }
+            
+            layoutNode(node, 0, 50, width - 50);
+            return result;
+        }
+        
+        function drawConnections(layout) {
+            ctx.strokeStyle = colors.line;
+            ctx.lineWidth = 2;
+            
+            for (const item of layout) {
+                if (item.node.children) {
+                    for (const child of item.node.children) {
+                        const childItem = layout.find(l => l.node.id === child.id);
+                        if (childItem) {
+                            ctx.beginPath();
+                            ctx.moveTo(item.x, item.y + item.height / 2);
+                            ctx.bezierCurveTo(
+                                item.x, item.y + item.height / 2 + 30,
+                                childItem.x, childItem.y - 30,
+                                childItem.x, childItem.y - item.height / 2
+                            );
+                            ctx.stroke();
+                        }
+                    }
+                }
+            }
+        }
+        
+        function drawNodes(layout) {
+            nodes = layout;
+            
+            for (const item of layout) {
+                const isSelected = selectedNode && selectedNode.id === item.node.id;
+                const status = item.node.status || 'pending';
+                
+                // 节点背景
+                ctx.beginPath();
+                const radius = 8;
+                const x = item.x - item.width / 2;
+                const y = item.y - item.height / 2;
+                ctx.roundRect(x, y, item.width, item.height, radius);
+                
+                ctx.fillStyle = isSelected ? colors[status] : colors.bg;
+                ctx.fill();
+                
+                ctx.strokeStyle = colors[status];
+                ctx.lineWidth = isSelected ? 3 : 2;
+                ctx.stroke();
+                
+                // 状态指示点
+                ctx.beginPath();
+                ctx.arc(x + 12, y + 12, 5, 0, Math.PI * 2);
+                ctx.fillStyle = colors[status];
+                ctx.fill();
+                
+                // 节点标题
+                ctx.fillStyle = colors.text;
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                const title = item.node.title || 'Task';
+                const maxLen = 16;
+                const displayTitle = title.length > maxLen ? title.slice(0, maxLen) + '...' : title;
+                ctx.fillText(displayTitle, item.x, item.y);
+            }
+        }
+        
+        // 点击处理
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            for (const item of nodes) {
+                if (x >= item.x - item.width / 2 && x <= item.x + item.width / 2 &&
+                    y >= item.y - item.height / 2 && y <= item.y + item.height / 2) {
+                    selectNode(item.node);
+                    return;
+                }
+            }
+        });
+        
+        function selectNode(node) {
+            selectedNode = node;
+            renderGraph();
+            showNodeDetail(node);
+        }
+        
+        function showNodeDetail(node) {
+            panelTitle.textContent = node.title || 'Task Node';
+            
+            let html = '';
+            
+            // 基本信息
+            html += '<div class="panel-section">';
+            html += '<div class="section-title">📋 基本信息</div>';
+            html += '<div class="node-info">';
+            html += '<div class="info-row"><span class="info-label">ID:</span><span class="info-value">' + node.id + '</span></div>';
+            html += '<div class="info-row"><span class="info-label">状态:</span><span class="info-value"><span class="status-dot status-' + (node.status || 'pending') + '"></span>' + (node.status || 'pending') + '</span></div>';
+            if (node.description) {
+                html += '<div class="info-row"><span class="info-label">描述:</span><span class="info-value">' + node.description + '</span></div>';
+            }
+            if (node.goal) {
+                html += '<div class="info-row"><span class="info-label">目标:</span><span class="info-value">' + node.goal + '</span></div>';
+            }
+            html += '</div></div>';
+            
+            // LLM 调用记录
+            if (node.llm_calls && node.llm_calls.length > 0) {
+                html += '<div class="panel-section">';
+                html += '<div class="section-title">🤖 LLM 调用记录 (' + node.llm_calls.length + ')</div>';
+                
+                node.llm_calls.forEach((call, idx) => {
+                    const typeLabels = { plan: '规划', execute: '执行', synthesize: '整合', verify: '验证' };
+                    html += '<div class="llm-call">';
+                    html += '<div class="llm-call-header" onclick="toggleLLMCall(' + idx + ')">';
+                    html += '<span class="llm-type">' + (typeLabels[call.type] || call.type) + '</span>';
+                    html += '<span class="llm-duration">' + call.duration_ms + 'ms</span>';
+                    html += '</div>';
+                    html += '<div class="llm-call-body" id="llm-call-' + idx + '">';
+                    
+                    html += '<div class="sub-label">请求消息:</div>';
+                    html += '<div class="code-block request">' + escapeHtml(JSON.stringify(call.messages, null, 2)) + '</div>';
+                    
+                    html += '<div class="sub-label">响应内容:</div>';
+                    html += '<div class="code-block response">' + escapeHtml(call.response) + '</div>';
+                    
+                    html += '</div></div>';
+                });
+                
+                html += '</div>';
+            }
+            
+            // 执行结果
+            if (node.result) {
+                html += '<div class="panel-section">';
+                html += '<div class="section-title">📝 执行结果</div>';
+                html += '<div class="code-block">' + escapeHtml(node.result.summary || node.result.output || JSON.stringify(node.result)) + '</div>';
+                html += '</div>';
+            }
+            
+            panelContent.innerHTML = html;
+            detailPanel.classList.add('open');
+            mainContent.classList.add('panel-open');
+        }
+        
+        function toggleLLMCall(idx) {
+            const body = document.getElementById('llm-call-' + idx);
+            body.classList.toggle('open');
+        }
+        
+        function closePanel() {
+            detailPanel.classList.remove('open');
+            mainContent.classList.remove('panel-open');
+            selectedNode = null;
+            renderGraph();
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.toString()
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
         }
         
         function addLog(level, message, time) {
@@ -315,7 +782,7 @@ const indexHTML = `<!DOCTYPE html>
             entry.innerHTML = '<span class="log-time">' + time + '</span>' + message;
             logsEl.insertBefore(entry, logsEl.firstChild);
             logCount++;
-            if (logCount > 100) {
+            if (logCount > 50) {
                 logsEl.removeChild(logsEl.lastChild);
             }
         }

@@ -81,6 +81,9 @@ type TaskNode struct {
 	Context *TaskContext `json:"context"`
 	Result  *TaskResult  `json:"result,omitempty"`
 
+	// 验证结果
+	Verification *VerificationInfo `json:"verification,omitempty"`
+
 	// 时间信息
 	CreatedAt  time.Time  `json:"created_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
@@ -89,9 +92,36 @@ type TaskNode struct {
 	// 日志
 	Logs []ExecutionLog `json:"logs"`
 
+	// LLM 调用记录
+	LLMCalls []LLMCallRecord `json:"llm_calls,omitempty"`
+
 	// 内部控制
 	mu       sync.RWMutex  `json:"-"`
 	cancelCh chan struct{} `json:"-"`
+}
+
+// VerificationInfo 验证信息
+type VerificationInfo struct {
+	Passed     bool                  `json:"passed"`
+	Iterations int                   `json:"iterations"`
+	Attempts   []VerificationAttempt `json:"attempts,omitempty"`
+}
+
+// VerificationAttempt 单次验证尝试
+type VerificationAttempt struct {
+	Iteration int    `json:"iteration"`
+	Passed    bool   `json:"passed"`
+	Feedback  string `json:"feedback"`
+	Timestamp string `json:"timestamp"`
+}
+
+// LLMCallRecord LLM 调用记录
+type LLMCallRecord struct {
+	Type       string                   `json:"type"`        // "plan", "execute", "synthesize", "verify"
+	Messages   []map[string]interface{} `json:"messages"`    // 请求消息
+	Response   string                   `json:"response"`    // 响应内容
+	StartTime  time.Time                `json:"start_time"`  // 开始时间
+	DurationMs int64                    `json:"duration_ms"` // 耗时（毫秒）
 }
 
 // NewTaskNode 创建新任务节点
@@ -154,6 +184,19 @@ func (n *TaskNode) AddLog(level LogLevel, phase, message string) {
 		Phase:   phase,
 		Message: message,
 		NodeID:  n.ID,
+	})
+}
+
+// AddLLMCall 添加 LLM 调用记录
+func (n *TaskNode) AddLLMCall(callType string, messages []map[string]interface{}, response string, startTime time.Time, durationMs int64) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.LLMCalls = append(n.LLMCalls, LLMCallRecord{
+		Type:       callType,
+		Messages:   messages,
+		Response:   response,
+		StartTime:  startTime,
+		DurationMs: durationMs,
 	})
 }
 
