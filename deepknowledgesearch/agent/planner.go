@@ -398,10 +398,45 @@ func cleanJSONResponse(response string) string {
 // 旧 API 兼容
 // ============================================================================
 
+// extractTaskTitle 从任务描述中提取简短标题
+func extractTaskTitle(description string) string {
+	// 取描述的前15个字符或到第一个标点符号
+	runes := []rune(description)
+
+	// 定义截止标点
+	punctuations := []rune{'。', '，', '、', '；', '：', '？', '！', '\n', '.', ',', ';', ':', '?', '!'}
+
+	maxLen := 15
+	if len(runes) < maxLen {
+		maxLen = len(runes)
+	}
+
+	// 查找第一个标点位置
+	endPos := maxLen
+	for i := 0; i < maxLen; i++ {
+		for _, p := range punctuations {
+			if runes[i] == p {
+				if i > 0 {
+					endPos = i
+				}
+				goto done
+			}
+		}
+	}
+done:
+
+	title := string(runes[:endPos])
+	if len(runes) > endPos {
+		title += "..."
+	}
+	return strings.TrimSpace(title)
+}
+
 // ExecuteTask 执行任务（旧 API，使用新的执行器）
 func (p *TaskPlanner) ExecuteTask(description string) (string, error) {
-	// 创建根节点
-	node := NewTaskNode("用户任务", description)
+	// 创建根节点 - 使用任务描述提取标题
+	taskTitle := extractTaskTitle(description)
+	node := NewTaskNode(taskTitle, description)
 	node.Goal = "完成用户请求的任务"
 
 	// 创建执行配置

@@ -292,20 +292,31 @@ func GenerateOutputReadme(node *TaskNode, outputDir string) error {
 	}
 	sb.WriteString("\n")
 
-	// 子任务报告
-	if len(node.Children) > 0 {
+	// 子任务报告 - 遍历所有子节点递归收集
+	allSubtasks := collectAllSubtasks(node)
+	if len(allSubtasks) > 0 {
 		sb.WriteString("### 子任务报告\n\n")
 		sb.WriteString("| 序号 | 任务名称 | 报告文档 | 大小 |\n")
 		sb.WriteString("|------|----------|----------|------|\n")
-		for i, child := range node.Children {
+
+		idx := 1
+		for _, child := range allSubtasks {
 			childFiles := findNodeOutputFiles(outputDir, child.Title)
 			if len(childFiles) > 0 {
 				for _, f := range childFiles {
 					sb.WriteString(fmt.Sprintf("| %d | %s | [%s](./%s) | %s |\n",
-						i+1, child.Title, f.Name, f.Name, formatFileSize(f.Size)))
+						idx, child.Title, f.Name, f.Name, formatFileSize(f.Size)))
+					idx++
 				}
-			} else {
-				sb.WriteString(fmt.Sprintf("| %d | %s | *无输出文件* | - |\n", i+1, child.Title))
+			}
+		}
+
+		// 如果没有按标题匹配到文件，列出所有 md 文件
+		if idx == 1 {
+			allMdFiles := listAllMdFiles(outputDir)
+			for i, f := range allMdFiles {
+				sb.WriteString(fmt.Sprintf("| %d | - | [%s](./%s) | %s |\n",
+					i+1, f.Name, f.Name, formatFileSize(f.Size)))
 			}
 		}
 		sb.WriteString("\n")
@@ -411,6 +422,34 @@ func listOutputFilesWithInfo(dir string) []OutputFileInfo {
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() && entry.Name() != "README.md" {
+			info, err := entry.Info()
+			if err == nil {
+				results = append(results, OutputFileInfo{Name: entry.Name(), Size: info.Size()})
+			}
+		}
+	}
+	return results
+}
+
+// collectAllSubtasks 递归收集所有子任务节点
+func collectAllSubtasks(node *TaskNode) []*TaskNode {
+	var results []*TaskNode
+	for _, child := range node.Children {
+		results = append(results, child)
+		results = append(results, collectAllSubtasks(child)...)
+	}
+	return results
+}
+
+// listAllMdFiles 列出目录中所有md文件
+func listAllMdFiles(dir string) []OutputFileInfo {
+	var results []OutputFileInfo
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return results
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") && entry.Name() != "README.md" {
 			info, err := entry.Info()
 			if err == nil {
 				results = append(results, OutputFileInfo{Name: entry.Name(), Size: info.Size()})

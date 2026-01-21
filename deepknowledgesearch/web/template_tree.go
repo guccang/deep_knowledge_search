@@ -260,8 +260,6 @@ const indexHTMLTree = `<!DOCTYPE html>
             overflow-x: auto;
             white-space: pre-wrap;
             word-break: break-all;
-            max-height: 180px;
-            overflow-y: auto;
             color: #a6adc8;
         }
         .code-block.response { border-left: 2px solid #4ade80; }
