@@ -36,7 +36,7 @@ var PromptNodePlanning = `请将以下任务分解为子任务。
 %s
 
 ## 规则
-1. 子任务 1-5 个
+1. 子任务 1-10 个
 2. **优先使用并行模式**：execution_mode 默认选择 "parallel"
 3. 仅当子任务之间有明确的依赖关系时才选择 "sequential"
 4. can_decompose: true 表示复杂子任务可继续拆解

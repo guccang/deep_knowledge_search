@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"deepknowledgesearch/mcp"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,8 +10,8 @@ import (
 	"time"
 )
 
-// LogDir 日志目录
-const LogDir = "logs"
+// LogDir 日志目录（现在是相对于任务输出目录的子目录）
+const LogSubDir = "logs"
 
 // TaskExecutionLog 任务执行日志（用于保存和回放）
 type TaskExecutionLog struct {
@@ -27,14 +28,20 @@ type TaskExecutionLog struct {
 
 // SaveExecutionLog 保存任务执行日志
 func SaveExecutionLog(node *TaskNode) (string, error) {
-	// 生成任务文件夹名
-	timestamp := time.Now().Format("20060102_150405")
-	sanitizedTitle := sanitizeForFilename(node.Title)
-	taskFolderName := fmt.Sprintf("%s_%s", sanitizedTitle, timestamp)
-	taskDir := filepath.Join(LogDir, taskFolderName)
+	// 获取当前任务的输出根目录（不包含节点路径）
+	outputDir := mcp.GetTaskRootDir()
+	if outputDir == "" {
+		// 如果没有设置，使用默认路径
+		timestamp := time.Now().Format("20060102_150405")
+		sanitizedTitle := sanitizeForFilename(node.Title)
+		outputDir = filepath.Join("output", fmt.Sprintf("%s_%s", sanitizedTitle, timestamp))
+	}
 
-	// 确保任务日志目录存在
-	if err := os.MkdirAll(taskDir, 0755); err != nil {
+	// 日志保存在 output/{task}/logs/ 目录下
+	logsDir := filepath.Join(outputDir, LogSubDir)
+
+	// 确保日志目录存在
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
 		return "", fmt.Errorf("创建任务日志目录失败: %w", err)
 	}
 
@@ -42,7 +49,7 @@ func SaveExecutionLog(node *TaskNode) (string, error) {
 	execLog := buildExecutionLog(node)
 
 	// 保存主日志文件
-	mainLogPath := filepath.Join(taskDir, "execution.json")
+	mainLogPath := filepath.Join(logsDir, "execution.json")
 	data, err := json.MarshalIndent(execLog, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("序列化日志失败: %w", err)
@@ -53,20 +60,20 @@ func SaveExecutionLog(node *TaskNode) (string, error) {
 	}
 
 	// 保存简要摘要
-	summaryPath := filepath.Join(taskDir, "summary.txt")
+	summaryPath := filepath.Join(logsDir, "summary.txt")
 	summary := buildSummary(node)
 	if err := os.WriteFile(summaryPath, []byte(summary), 0644); err != nil {
 		fmt.Printf("保存摘要失败: %v\n", err)
 	}
 
 	// 生成文章索引
-	indexPath := filepath.Join(taskDir, "INDEX.md")
-	index := GenerateArticleIndex(node, taskFolderName)
+	indexPath := filepath.Join(logsDir, "INDEX.md")
+	index := GenerateArticleIndex(node, filepath.Base(outputDir))
 	if err := os.WriteFile(indexPath, []byte(index), 0644); err != nil {
 		fmt.Printf("保存索引失败: %v\n", err)
 	}
 
-	return taskDir, nil
+	return logsDir, nil
 }
 
 // GenerateArticleIndex 生成文章索引（基于任务图结构）
@@ -97,7 +104,7 @@ func GenerateArticleIndex(node *TaskNode, taskFolder string) string {
 
 	// 输出文件列表
 	sb.WriteString("## 📁 输出文件\n\n")
-	outputDir := filepath.Join("output", taskFolder)
+	outputDir := filepath.Join("output", taskFolder, "doc")
 	files := listOutputFiles(outputDir)
 	if len(files) > 0 {
 		for _, f := range files {

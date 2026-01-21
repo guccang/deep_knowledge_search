@@ -24,6 +24,7 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	mu         sync.RWMutex
+	lastState  []byte // 缓存最新状态，用于新连接时发送
 }
 
 // Client WebSocket 客户端
@@ -43,6 +44,13 @@ func NewHub() *Hub {
 	}
 }
 
+// SetLastState 设置最新状态（用于新连接时发送）
+func (h *Hub) SetLastState(state []byte) {
+	h.mu.Lock()
+	h.lastState = state
+	h.mu.Unlock()
+}
+
 // Run 运行 Hub
 func (h *Hub) Run() {
 	for {
@@ -50,6 +58,13 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
+			// 向新连接的客户端发送最新状态
+			if h.lastState != nil {
+				select {
+				case client.send <- h.lastState:
+				default:
+				}
+			}
 			h.mu.Unlock()
 
 		case client := <-h.unregister:

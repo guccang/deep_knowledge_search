@@ -4,7 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io/ioutil"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -44,6 +50,10 @@ func (s *Server) Start() error {
 	http.HandleFunc("/", s.handleIndex)
 	http.HandleFunc("/ws", s.handleWebSocket)
 	http.HandleFunc("/api/status", s.handleStatus)
+	http.HandleFunc("/api/history", s.handleHistoryList)
+	http.HandleFunc("/api/history/", s.handleHistoryDetail)
+	http.HandleFunc("/api/docs", s.handleDocsList)
+	http.HandleFunc("/api/docs/", s.handleDocContent)
 
 	addr := fmt.Sprintf(":%d", s.port)
 	fmt.Printf("[Web] Dashboard 启动: http://localhost%s\n", addr)
@@ -77,6 +87,218 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleHistoryList 列出历史执行记录
+func (s *Server) handleHistoryList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// 从 output 目录读取，每个任务目录下有 logs/execution.json
+	outputDir := "output"
+	entries, err := ioutil.ReadDir(outputDir)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":   "无法读取输出目录",
+			"history": []interface{}{},
+		})
+		return
+	}
+
+	var history []map[string]interface{}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// 新结构：output/{task}/logs/execution.json
+		execFile := filepath.Join(outputDir, entry.Name(), "logs", "execution.json")
+		data, err := ioutil.ReadFile(execFile)
+		if err != nil {
+			continue
+		}
+
+		var execData map[string]interface{}
+		if err := json.Unmarshal(data, &execData); err != nil {
+			continue
+		}
+
+		// 只返回摘要信息
+		history = append(history, map[string]interface{}{
+			"id":         entry.Name(),
+			"task_id":    execData["task_id"],
+			"title":      execData["title"],
+			"start_time": execData["start_time"],
+			"end_time":   execData["end_time"],
+			"success":    execData["success"],
+		})
+	}
+
+	// 按时间倒序排列
+	sort.Slice(history, func(i, j int) bool {
+		ti, _ := history[i]["start_time"].(string)
+		tj, _ := history[j]["start_time"].(string)
+		return ti > tj
+	})
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"history": history,
+	})
+}
+
+// handleHistoryDetail 获取历史执行详情
+func (s *Server) handleHistoryDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// 从路径获取ID
+	id := strings.TrimPrefix(r.URL.Path, "/api/history/")
+	if id == "" {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "缺少历史记录ID",
+		})
+		return
+	}
+
+	// 新结构：output/{id}/logs/execution.json
+	execFile := filepath.Join("output", id, "logs", "execution.json")
+	data, err := ioutil.ReadFile(execFile)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "未找到历史记录",
+		})
+		return
+	}
+
+	var execData map[string]interface{}
+	if err := json.Unmarshal(data, &execData); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "解析历史记录失败",
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(execData)
+}
+
+// handleDocsList 列出输出文档
+func (s *Server) handleDocsList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	outputDir := "output"
+	var docs []map[string]interface{}
+
+	err := filepath.Walk(outputDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(outputDir, path)
+		if relPath == "." {
+			return nil
+		}
+
+		doc := map[string]interface{}{
+			"path":   relPath,
+			"name":   info.Name(),
+			"is_dir": info.IsDir(),
+		}
+
+		if !info.IsDir() {
+			doc["size"] = info.Size()
+			doc["mod_time"] = info.ModTime().Format("2006-01-02 15:04:05")
+		}
+
+		docs = append(docs, doc)
+		return nil
+	})
+
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "无法读取输出目录",
+			"docs":  []interface{}{},
+		})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"docs": docs,
+	})
+}
+
+// handleDocContent 获取文档内容
+func (s *Server) handleDocContent(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// 从路径获取文件路径
+	docPath := strings.TrimPrefix(r.URL.Path, "/api/docs/")
+	if docPath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "缺少文档路径",
+		})
+		return
+	}
+
+	// URL 解码
+	decodedPath, err := url.PathUnescape(docPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "路径解码失败",
+		})
+		return
+	}
+
+	// 安全检查：防止路径遍历
+	cleanPath := filepath.Clean(decodedPath)
+	// 检查路径是否试图跳出 output 目录
+	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, "/../") {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "非法路径",
+		})
+		return
+	}
+
+	fullPath := filepath.Join("output", cleanPath)
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "文件不存在",
+		})
+		return
+	}
+
+	if info.IsDir() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "不能读取目录",
+		})
+		return
+	}
+
+	content, err := ioutil.ReadFile(fullPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "读取文件失败",
+		})
+		return
+	}
+
+	// 根据文件类型设置Content-Type
+	if strings.HasSuffix(cleanPath, ".md") {
+		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	} else if strings.HasSuffix(cleanPath, ".json") {
+		w.Header().Set("Content-Type", "application/json")
+	} else {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	}
+
+	w.Write(content)
+}
+
 // Broadcast 广播消息到所有客户端
 func (s *Server) Broadcast(msg interface{}) {
 	data, err := json.Marshal(msg)
@@ -108,11 +330,22 @@ func BroadcastEvent(eventType string, data interface{}) {
 	if globalServer == nil {
 		return
 	}
-	globalServer.Broadcast(map[string]interface{}{
+	msg := map[string]interface{}{
 		"type": eventType,
 		"data": data,
 		"time": time.Now().Format("15:04:05"),
-	})
+	}
+	msgBytes, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+
+	// 缓存 tree_update 类型的消息，用于新连接时发送
+	if eventType == "tree_update" || eventType == "node_data" {
+		globalServer.hub.SetLastState(msgBytes)
+	}
+
+	globalServer.hub.Broadcast(msgBytes)
 }
 
 // ===========================================================================

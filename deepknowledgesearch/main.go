@@ -1,19 +1,20 @@
-// Deep Knowledge Search - 知识深度搜索命令行工具
 package main
 
 import (
-	"bufio"
 	"deepknowledgesearch/agent"
 	"deepknowledgesearch/config"
 	"deepknowledgesearch/web"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+
+	"github.com/chzyer/readline"
 )
 
 func main() {
 	fmt.Println("╔══════════════════════════════════════════════════════════╗")
-	fmt.Println("║           知识深度搜索 - Deep Knowledge Search            ║")
+	fmt.Println("║           知识深度搜索 - Deep Knowledge Search             ║")
 	fmt.Println("║                     v1.0.0                               ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════╝")
 	fmt.Println()
@@ -54,21 +55,35 @@ func main() {
 	fmt.Println("📝 请输入您的任务描述（输入 'exit' 或 'quit' 退出）:")
 	fmt.Println()
 
-	reader := bufio.NewReader(os.Stdin)
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          "🔍 > ",
+		HistoryFile:     "/tmp/deep_knowledge_search.history",
+		AutoComplete:    nil,
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Readline error: %v\n", err)
+		return
+	}
+	defer rl.Close()
 
 	for {
-		fmt.Print("🔍 > ")
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			if err.Error() == "EOF" {
+		line, err := rl.Readline()
+		if err != nil { // io.EOF, readline.ErrInterrupt
+			if err == readline.ErrInterrupt {
+				if len(line) == 0 {
+					break
+				}
+				continue
+			} else if err == io.EOF {
 				break
 			}
-			fmt.Fprintf(os.Stderr, "读取输入错误: %v\n", err)
 			continue
 		}
 
 		// Trim whitespace
-		input = strings.TrimSpace(input)
+		input := strings.TrimSpace(line)
 
 		// Check for exit commands
 		if input == "" {

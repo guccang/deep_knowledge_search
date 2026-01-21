@@ -147,6 +147,9 @@ func (e *TaskExecutor) executeNode(node *TaskNode) error {
 		// 汇总子节点结果
 		e.aggregateChildResults(node)
 	} else {
+		// 叶子节点，设置节点输出路径
+		e.setNodeOutputPath(node)
+
 		// 叶子节点，直接执行
 		if err := e.executeLeafNode(node); err != nil {
 			return e.handleNodeError(node, err)
@@ -359,4 +362,49 @@ func joinStrings(strs []string, sep string) string {
 		result += sep + strs[i]
 	}
 	return result
+}
+
+// setNodeOutputPath 设置节点输出路径（用于树形目录结构）
+func (e *TaskExecutor) setNodeOutputPath(node *TaskNode) {
+	path := e.buildNodePath(node)
+	mcp.SetNodePath(path)
+}
+
+// buildNodePath 构建节点路径（从根到当前节点）
+func (e *TaskExecutor) buildNodePath(node *TaskNode) string {
+	// 从当前节点向上遍历收集路径
+	var pathParts []string
+	current := node
+
+	for current != nil && current.ID != e.root.ID {
+		pathParts = append([]string{sanitizeForFilename(current.Title)}, pathParts...)
+		current = e.findParentNode(current)
+	}
+
+	if len(pathParts) == 0 {
+		return ""
+	}
+
+	return joinStrings(pathParts, "/")
+}
+
+// findParentNode 查找父节点
+func (e *TaskExecutor) findParentNode(node *TaskNode) *TaskNode {
+	if node.ParentID == "" {
+		return nil
+	}
+	return e.findNodeByID(e.root, node.ParentID)
+}
+
+// findNodeByID 递归查找节点
+func (e *TaskExecutor) findNodeByID(root *TaskNode, id string) *TaskNode {
+	if root.ID == id {
+		return root
+	}
+	for _, child := range root.Children {
+		if found := e.findNodeByID(child, id); found != nil {
+			return found
+		}
+	}
+	return nil
 }

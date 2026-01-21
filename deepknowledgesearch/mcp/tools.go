@@ -12,7 +12,9 @@ import (
 // 输出目录配置
 var (
 	baseOutputDir        = "output"
+	docSubDir            = "doc" // 文档子目录
 	currentTaskOutputDir = ""
+	currentNodePath      = "" // 当前节点路径（用于树形目录结构）
 	outputDirMu          sync.RWMutex
 )
 
@@ -21,14 +23,36 @@ func SetTaskOutputDir(taskFolder string) {
 	outputDirMu.Lock()
 	defer outputDirMu.Unlock()
 	currentTaskOutputDir = taskFolder
+	currentNodePath = "" // 重置节点路径
 }
 
-// GetCurrentOutputDir 获取当前输出目录
-func GetCurrentOutputDir() string {
+// SetNodePath 设置当前节点路径（用于树形目录结构）
+func SetNodePath(path string) {
+	outputDirMu.Lock()
+	defer outputDirMu.Unlock()
+	currentNodePath = path
+}
+
+// GetTaskRootDir 获取任务根目录（不包含doc/和节点路径）
+func GetTaskRootDir() string {
 	outputDirMu.RLock()
 	defer outputDirMu.RUnlock()
 	if currentTaskOutputDir != "" {
 		return filepath.Join(baseOutputDir, currentTaskOutputDir)
+	}
+	return ""
+}
+
+// GetCurrentOutputDir 获取当前输出目录（包含doc/和节点路径）
+func GetCurrentOutputDir() string {
+	outputDirMu.RLock()
+	defer outputDirMu.RUnlock()
+	if currentTaskOutputDir != "" {
+		basePath := filepath.Join(baseOutputDir, currentTaskOutputDir, docSubDir)
+		if currentNodePath != "" {
+			return filepath.Join(basePath, currentNodePath)
+		}
+		return basePath
 	}
 	return baseOutputDir
 }
@@ -38,6 +62,7 @@ func ClearTaskOutputDir() {
 	outputDirMu.Lock()
 	defer outputDirMu.Unlock()
 	currentTaskOutputDir = ""
+	currentNodePath = ""
 }
 
 // RegisterDefaultTools registers the default set of tools
