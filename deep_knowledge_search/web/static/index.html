@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Knowledge Search - Dashboard</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="main-content" id="mainContent">
+            <header>
+                <h1>🔍 Deep Knowledge Search</h1>
+                <span id="status" class="status-badge disconnected">连接中...</span>
+            </header>
+            
+            <div class="graph-container">
+                <canvas id="graphCanvas"></canvas>
+                <div class="graph-hint">点击节点查看详情</div>
+            </div>
+            
+            <div class="log-panel" id="logs">
+                <div class="empty-state">暂无日志</div>
+            </div>
+        </div>
+        
+        <div class="detail-panel" id="detailPanel">
+            <div class="panel-header">
+                <h3 id="panelTitle">节点详情</h3>
+                <button class="close-btn" onclick="closePanel()">×</button>
+            </div>
+            <div class="panel-content" id="panelContent">
+            </div>
+        </div>
+    </div>
+    
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

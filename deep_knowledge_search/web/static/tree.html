@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Knowledge Search - Dashboard</title>
+    <link rel="stylesheet" href="/static/css/tree.css">
+</head>
+
+<body>
+    <div class="app-container">
+        <div class="main-content" id="mainContent">
+            <header>
+                <h1>🔍 Deep Knowledge Search</h1>
+                <span id="status" class="status-badge disconnected">连接中...</span>
+            </header>
+
+            <div class="nav-tabs">
+                <div class="nav-tab active" onclick="switchTab('current')">📊 当前任务</div>
+                <div class="nav-tab" onclick="switchTab('history')">📜 历史记录</div>
+                <div class="nav-tab" onclick="switchTab('docs')">📄 输出文档</div>
+            </div>
+
+            <!-- 当前任务标签 -->
+            <div class="tab-content active" id="tab-current">
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <button class="btn btn-icon" onclick="expandAll()" title="展开全部">📂 展开</button>
+                        <button class="btn btn-icon" onclick="collapseAll()" title="折叠全部">📁 折叠</button>
+                    </div>
+                    <div class="stats-bar" id="statsBar">
+                        <div class="stat-item">
+                            <span class="stat-icon stat-done"></span>
+                            <span class="stat-value" id="statDone">0</span>
+                            <span class="stat-label">完成</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-icon stat-running"></span>
+                            <span class="stat-value" id="statRunning">0</span>
+                            <span class="stat-label">执行中</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-icon stat-pending"></span>
+                            <span class="stat-value" id="statPending">0</span>
+                            <span class="stat-label">待处理</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-icon stat-failed"></span>
+                            <span class="stat-value" id="statFailed">0</span>
+                            <span class="stat-label">失败</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 可恢复任务区域 -->
+                <div class="recoverable-tasks" id="recoverableTasks" style="display:none">
+                    <div class="section-header">
+                        <span>🔄 可恢复的任务</span>
+                        <button class="btn btn-small" onclick="loadRecoverableTasks()">刷新</button>
+                    </div>
+                    <div class="recoverable-list" id="recoverableList"></div>
+                </div>
+
+                <div class="tree-container" id="treeContainer">
+                    <div class="empty-state">等待任务开始...</div>
+                </div>
+
+                <div class="log-panel" id="logs">
+                    <div class="empty-state" style="padding:15px">暂无日志</div>
+                </div>
+            </div>
+
+            <!-- 历史记录标签 -->
+            <div class="tab-content" id="tab-history">
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <button class="btn" onclick="loadHistory()">🔄 刷新</button>
+                    </div>
+                </div>
+                <div class="history-list" id="historyList">
+                    <div class="empty-state">加载中...</div>
+                </div>
+            </div>
+
+            <!-- 输出文档标签 -->
+            <div class="tab-content" id="tab-docs">
+                <div class="toolbar">
+                    <div class="toolbar-left">
+                        <button class="btn" onclick="loadDocs()">🔄 刷新</button>
+                    </div>
+                </div>
+                <div class="doc-browser">
+                    <div class="doc-tree" id="docTree">
+                        <div class="empty-state">加载中...</div>
+                    </div>
+                    <div class="doc-viewer" id="docViewer">
+                        <div class="empty-state">选择文档查看</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="detail-panel" id="detailPanel">
+            <div class="panel-header">
+                <h3 id="panelTitle">节点详情</h3>
+                <button class="close-btn" onclick="closePanel()">×</button>
+            </div>
+            <div class="panel-content" id="panelContent"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/tree.js"></script>
+</body>
+
+</html>
