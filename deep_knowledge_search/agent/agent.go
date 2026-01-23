@@ -27,8 +27,20 @@ func InitWithConfig(cfg *config.AppConfig) error {
 	// Initialize MCP
 	mcp.Init()
 
+	// Convert config models to llm models
+	var llmModels []llm.ModelConfig
+	for _, m := range cfg.Models {
+		llmModels = append(llmModels, llm.ModelConfig{
+			Name:        m.Name,
+			APIKey:      m.APIKey,
+			BaseURL:     m.BaseURL,
+			Model:       m.Model,
+			Temperature: m.Temperature,
+		})
+	}
+
 	// Initialize LLM with config
-	if err := llm.InitWithConfig(cfg.APIKey, cfg.BaseURL, cfg.Model, cfg.Temperature); err != nil {
+	if err := llm.InitWithConfig(llmModels, cfg.DefaultModel); err != nil {
 		return fmt.Errorf("failed to initialize LLM: %w", err)
 	}
 

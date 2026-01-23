@@ -13,9 +13,10 @@ import (
 
 // SendSyncLLMRequest sends a synchronous LLM request with tool calling support
 func SendSyncLLMRequest(ctx context.Context, messages []Message) (string, error) {
-	config := GetConfig()
-	if config.APIKey == "" {
-		return "", fmt.Errorf("LLM API key not configured")
+	// Get current model config
+	modelConfig := GetCurrentModelConfig()
+	if modelConfig.APIKey == "" {
+		return "", fmt.Errorf("LLM API key not configured for model %s", modelConfig.Name)
 	}
 
 	// Get available MCP tools
@@ -36,10 +37,10 @@ func SendSyncLLMRequest(ctx context.Context, messages []Message) (string, error)
 
 		// Build request body
 		requestBody := map[string]interface{}{
-			"model":       config.Model,
+			"model":       modelConfig.Model,
 			"messages":    apiMessages,
 			"tools":       availableTools,
-			"temperature": config.Temperature,
+			"temperature": modelConfig.Temperature,
 			"stream":      false,
 		}
 
@@ -51,13 +52,13 @@ func SendSyncLLMRequest(ctx context.Context, messages []Message) (string, error)
 		fmt.Printf("[LLM] Sending request (iteration %d)...\n", iteration+1)
 
 		// Create HTTP request with context
-		req, err := http.NewRequestWithContext(ctx, "POST", config.BaseURL, bytes.NewBuffer(jsonData))
+		req, err := http.NewRequestWithContext(ctx, "POST", modelConfig.BaseURL, bytes.NewBuffer(jsonData))
 		if err != nil {
 			return "", fmt.Errorf("create request failed: %w", err)
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+config.APIKey)
+		req.Header.Set("Authorization", "Bearer "+modelConfig.APIKey)
 
 		// Send request (1 hour timeout)
 		client := &http.Client{Timeout: 3600 * time.Second}

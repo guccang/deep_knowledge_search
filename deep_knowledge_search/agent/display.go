@@ -149,6 +149,14 @@ func buildNodeData(node *TaskNode) map[string]interface{} {
 		"goal":        node.Goal,
 		"status":      string(node.Status),
 		"depth":       node.Depth,
+		"created_at":  node.CreatedAt,
+	}
+
+	if node.StartedAt != nil {
+		data["started_at"] = node.StartedAt
+	}
+	if node.FinishedAt != nil {
+		data["finished_at"] = node.FinishedAt
 	}
 
 	// 添加 LLM 调用记录

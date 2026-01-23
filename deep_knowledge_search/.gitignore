@@ -6,3 +6,4 @@ output
 *.bin
 *.log
 *.lock
+config.yaml

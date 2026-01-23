@@ -11,8 +11,21 @@ import (
 // ConfigFileName 配置文件名
 const ConfigFileName = "config.json"
 
+// ModelConfig 模型配置
+type ModelConfig struct {
+	Name        string  `json:"name"`
+	APIKey      string  `json:"api_key"`
+	BaseURL     string  `json:"base_url"`
+	Model       string  `json:"model"`
+	Temperature float64 `json:"temperature"`
+}
+
 // LLMConfig holds LLM API configuration
 type LLMConfig struct {
+	Models       map[string]ModelConfig
+	CurrentModel string
+
+	// 兼容旧字段 (Deprecated)
 	APIKey      string  `json:"api_key"`
 	BaseURL     string  `json:"base_url"`
 	Model       string  `json:"model"`
@@ -20,36 +33,46 @@ type LLMConfig struct {
 }
 
 // Global configuration instance
-var llmConfig = LLMConfig{}
+var llmConfig = LLMConfig{
+	Models: make(map[string]ModelConfig),
+}
 
 // GetConfig returns the current LLM configuration
 func GetConfig() *LLMConfig {
 	return &llmConfig
 }
 
+// GetCurrentModelConfig 获取当前使用的模型配置
+func GetCurrentModelConfig() ModelConfig {
+	if config, ok := llmConfig.Models[llmConfig.CurrentModel]; ok {
+		return config
+	}
+	// Fallback to legacy fields if no model selected or found
+	return ModelConfig{
+		Name:        "legacy",
+		APIKey:      llmConfig.APIKey,
+		BaseURL:     llmConfig.BaseURL,
+		Model:       llmConfig.Model,
+		Temperature: llmConfig.Temperature,
+	}
+}
+
 // InitWithConfig initializes with explicit config values
-func InitWithConfig(apiKey, baseURL, model string, temperature float64) error {
-	if apiKey == "" {
-		return fmt.Errorf("API key is required")
+func InitWithConfig(models []ModelConfig, defaultModel string) error {
+	llmConfig.Models = make(map[string]ModelConfig)
+	for _, m := range models {
+		llmConfig.Models[m.Name] = m
 	}
-	if baseURL == "" {
-		baseURL = "https://api.deepseek.com/v1/chat/completions"
-	}
-	if model == "" {
-		model = "deepseek-chat"
-	}
-	if temperature == 0 {
-		temperature = 0.3
-	}
+	llmConfig.CurrentModel = defaultModel
 
-	llmConfig = LLMConfig{
-		APIKey:      apiKey,
-		BaseURL:     baseURL,
-		Model:       model,
-		Temperature: temperature,
-	}
+	// 同时也设置旧字段作为后备
+	current := GetCurrentModelConfig()
+	llmConfig.APIKey = current.APIKey
+	llmConfig.BaseURL = current.BaseURL
+	llmConfig.Model = current.Model
+	llmConfig.Temperature = current.Temperature
 
-	fmt.Printf("[LLM] 配置完成: model=%s\n", llmConfig.Model)
+	fmt.Printf("[LLM] 配置完成: current=%s, model=%s\n", llmConfig.CurrentModel, current.Model)
 	return nil
 }
 
@@ -88,7 +111,21 @@ func InitConfig() error {
 		return fmt.Errorf("请在 config.json 中配置 api_key，或设置环境变量 OPENAI_API_KEY")
 	}
 
+	// 从环境变量构建默认模型配置
+	defaultConfig := ModelConfig{
+		Name:        "env_default",
+		APIKey:      apiKey,
+		BaseURL:     baseURL,
+		Model:       model,
+		Temperature: 0.3,
+	}
+
 	llmConfig = LLMConfig{
+		Models: map[string]ModelConfig{
+			"env_default": defaultConfig,
+		},
+		CurrentModel: "env_default",
+		// Legacy fields
 		APIKey:      apiKey,
 		BaseURL:     baseURL,
 		Model:       model,

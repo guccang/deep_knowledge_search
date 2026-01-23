@@ -445,7 +445,7 @@ func extractTaskTitle(description string) string {
 	// 定义截止标点
 	punctuations := []rune{'。', '，', '、', '；', '：', '？', '！', '\n', '.', ',', ';', ':', '?', '!'}
 
-	maxLen := 15
+	maxLen := 50
 	if len(runes) < maxLen {
 		maxLen = len(runes)
 	}

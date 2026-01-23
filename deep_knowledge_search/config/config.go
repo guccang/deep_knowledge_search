@@ -10,13 +10,26 @@ import (
 // ConfigFileName 配置文件名
 const ConfigFileName = "config.json"
 
-// AppConfig 应用配置
-type AppConfig struct {
-	// LLM 配置
+// ModelConfig 模型配置
+type ModelConfig struct {
+	Name        string  `json:"name"`
 	APIKey      string  `json:"api_key"`
 	BaseURL     string  `json:"base_url"`
 	Model       string  `json:"model"`
 	Temperature float64 `json:"temperature"`
+}
+
+// AppConfig 应用配置
+type AppConfig struct {
+	// LLM 多模型配置
+	Models       []ModelConfig `json:"models"`
+	DefaultModel string        `json:"default_model"`
+
+	// 兼容旧配置 (Deprecated)
+	APIKey      string  `json:"api_key,omitempty"`
+	BaseURL     string  `json:"base_url,omitempty"`
+	Model       string  `json:"model,omitempty"`
+	Temperature float64 `json:"temperature,omitempty"`
 
 	// Web 配置
 	WebPort    int  `json:"web_port"`
@@ -58,16 +71,39 @@ func LoadConfig() error {
 		return fmt.Errorf("配置文件格式错误: %w", err)
 	}
 
+	// 兼容性处理：如果 Models 为空但有旧配置，则迁移
+	if len(appConfig.Models) == 0 && appConfig.APIKey != "" {
+		appConfig.Models = []ModelConfig{
+			{
+				Name:        "default",
+				APIKey:      appConfig.APIKey,
+				BaseURL:     appConfig.BaseURL,
+				Model:       appConfig.Model,
+				Temperature: appConfig.Temperature,
+			},
+		}
+		appConfig.DefaultModel = "default"
+	}
+
 	// 设置默认值
-	if appConfig.BaseURL == "" {
-		appConfig.BaseURL = "https://api.deepseek.com/v1/chat/completions"
+	if len(appConfig.Models) == 0 {
+		// 如果完全没有配置，添加默认的 DeepSeek 配置
+		appConfig.Models = []ModelConfig{
+			{
+				Name:        "deepseek",
+				APIKey:      "", // 需要用户填写
+				BaseURL:     "https://api.deepseek.com/v1/chat/completions",
+				Model:       "deepseek-chat",
+				Temperature: 0.3,
+			},
+		}
+		appConfig.DefaultModel = "deepseek"
 	}
-	if appConfig.Model == "" {
-		appConfig.Model = "deepseek-chat"
+
+	if appConfig.DefaultModel == "" && len(appConfig.Models) > 0 {
+		appConfig.DefaultModel = appConfig.Models[0].Name
 	}
-	if appConfig.Temperature == 0 {
-		appConfig.Temperature = 0.3
-	}
+
 	if appConfig.WebPort == 0 {
 		appConfig.WebPort = 8080
 	}
@@ -75,8 +111,8 @@ func LoadConfig() error {
 		appConfig.OutputDir = "output"
 	}
 
-	fmt.Printf("[Config] 加载完成: model=%s, web_port=%d, web_enabled=%v\n",
-		appConfig.Model, appConfig.WebPort, appConfig.WebEnabled)
+	fmt.Printf("[Config] 加载完成: models=%d, default=%s, web_port=%d\n",
+		len(appConfig.Models), appConfig.DefaultModel, appConfig.WebPort)
 
 	return nil
 }

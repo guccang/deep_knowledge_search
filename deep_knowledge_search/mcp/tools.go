@@ -101,9 +101,10 @@ func sanitizeFilename(name string) string {
 		result = strings.ReplaceAll(result, char, "_")
 	}
 
-	// Limit length
-	if len(result) > 50 {
-		result = result[:50]
+	// Limit length (use runes for correct unicode handling)
+	runes := []rune(result)
+	if len(runes) > 50 {
+		result = string(runes[:50])
 	}
 
 	return result

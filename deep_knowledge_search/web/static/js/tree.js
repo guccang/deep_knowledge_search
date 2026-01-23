@@ -139,6 +139,35 @@ function renderNode(node, isRoot) {
     html += '<span class="status-icon status-' + status + '"></span>';
     html += '<span class="node-title">' + escapeHtml(node.title || 'Task') + '</span>';
 
+    // 显示耗时
+    if (node.started_at) {
+        const start = new Date(node.started_at);
+        const end = node.finished_at ? new Date(node.finished_at) : new Date();
+        // 如果任务未完成且未运行（如暂停或失败），使用最后更新时间或保持当前时间
+        // 这里简化处理：如果是 running，计算动态耗时；如果是 done/failed，计算固定耗时
+
+        let duration = 0;
+        if (node.finished_at) {
+            duration = new Date(node.finished_at) - start;
+        } else if (node.status === 'running') {
+            duration = new Date() - start;
+        }
+
+        if (duration > 0) {
+            let durationStr = '';
+            if (duration < 1000) durationStr = duration + 'ms';
+            else if (duration < 60000) durationStr = (duration / 1000).toFixed(1) + 's';
+            else durationStr = (duration / 60000).toFixed(1) + 'm';
+
+            if (!node.finished_at && node.status === 'running') {
+                durationStr += '...';
+            }
+
+            // 只有当耗时有意义时才显示
+            html += '<span class="node-badge" style="background:rgba(107,114,128,0.1);color:#6b7280" title="开始: ' + new Date(node.started_at).toLocaleTimeString() + '">⏱️ ' + durationStr + '</span>';
+        }
+    }
+
     if (node.llm_calls && node.llm_calls.length > 0) {
         html += '<span class="node-badge">LLM: ' + node.llm_calls.length + '</span>';
     }
@@ -271,6 +300,27 @@ function showNodeDetail(node) {
     html += '<div class="node-info">';
     html += '<div class="info-row"><span class="info-label">ID:</span><span class="info-value">' + node.id + '</span></div>';
     html += '<div class="info-row"><span class="info-label">状态:</span><span class="info-value"><span class="status-icon status-' + (node.status || 'pending') + '" style="display:inline-block;vertical-align:middle"></span> ' + (node.status || 'pending') + '</span></div>';
+
+    // 时间信息
+    if (node.created_at) {
+        html += '<div class="info-row"><span class="info-label">创建时间:</span><span class="info-value">' + new Date(node.created_at).toLocaleString() + '</span></div>';
+    }
+    if (node.started_at) {
+        html += '<div class="info-row"><span class="info-label">开始时间:</span><span class="info-value">' + new Date(node.started_at).toLocaleString() + '</span></div>';
+    }
+    if (node.finished_at) {
+        html += '<div class="info-row"><span class="info-label">结束时间:</span><span class="info-value">' + new Date(node.finished_at).toLocaleString() + '</span></div>';
+
+        // 计算总耗时
+        if (node.started_at) {
+            const duration = new Date(node.finished_at) - new Date(node.started_at);
+            let durationStr = '';
+            if (duration < 1000) durationStr = duration + 'ms';
+            else if (duration < 60000) durationStr = (duration / 1000).toFixed(2) + 's';
+            else durationStr = (duration / 60000).toFixed(2) + 'm';
+            html += '<div class="info-row"><span class="info-label">总耗时:</span><span class="info-value">' + durationStr + '</span></div>';
+        }
+    }
     if (node.description) {
         html += '<div class="info-row"><span class="info-label">描述:</span><span class="info-value">' + escapeHtml(node.description) + '</span></div>';
     }
