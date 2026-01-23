@@ -74,7 +74,12 @@ func (p *TaskPlanner) PlanNode(ctx context.Context, node *TaskNode) (*NodePlanni
 	// 记录开始时间
 	startTime := time.Now()
 
-	response, err := llm.SendSyncLLMRequest(messages)
+	// 注入 OutputPath 到 Context
+	if node.OutputPath != "" {
+		ctx = context.WithValue(ctx, mcp.ContextKeyOutputPath, node.OutputPath)
+	}
+
+	response, err := llm.SendSyncLLMRequest(ctx, messages)
 
 	// 计算耗时并记录 LLM 调用
 	durationMs := time.Since(startTime).Milliseconds()
@@ -123,21 +128,50 @@ func (p *TaskPlanner) ExecuteNode(ctx context.Context, node *TaskNode) (*TaskRes
 		{Role: "user", Content: prompt},
 	}
 
-	// 记录开始时间
-	startTime := time.Now()
+	// 记录开始时间 (已移至循环内)
+	// startTime := time.Now()
 
-	response, err := llm.SendSyncLLMRequest(messages)
-
-	// 计算耗时并记录 LLM 调用
-	durationMs := time.Since(startTime).Milliseconds()
-	llmMessages := []map[string]interface{}{
-		{"role": "system", "content": PromptExecutionSystem},
-		{"role": "user", "content": prompt},
+	// 注入 OutputPath 到 Context
+	if node.OutputPath != "" {
+		ctx = context.WithValue(ctx, mcp.ContextKeyOutputPath, node.OutputPath)
 	}
-	node.AddLLMCall("execute", llmMessages, response, startTime, durationMs)
+
+	var response string
+	var err error
+	maxRetries := 3
+
+	for i := 0; i < maxRetries; i++ {
+		// 每次重试重新计时
+		callStartTime := time.Now()
+
+		response, err = llm.SendSyncLLMRequest(ctx, messages)
+
+		// 计算耗时并记录 LLM 调用
+		durationMs := time.Since(callStartTime).Milliseconds()
+		llmMessages := []map[string]interface{}{
+			{"role": "system", "content": PromptExecutionSystem},
+			{"role": "user", "content": prompt},
+		}
+
+		// 记录调用（包含重试信息）
+		callType := "execute"
+		if i > 0 {
+			callType = fmt.Sprintf("execute_retry_%d", i)
+		}
+		node.AddLLMCall(callType, llmMessages, response, callStartTime, durationMs)
+
+		if err == nil {
+			break
+		}
+
+		if i < maxRetries-1 {
+			node.AddLog(LogWarn, "retry", fmt.Sprintf("LLM 执行失败，准备重试 (%d/%d): %v", i+1, maxRetries, err))
+			time.Sleep(time.Second * 2)
+		}
+	}
 
 	if err != nil {
-		return nil, fmt.Errorf("LLM 执行失败: %w", err)
+		return nil, fmt.Errorf("LLM 执行失败 (重试 %d 次后): %w", maxRetries, err)
 	}
 
 	// 生成摘要
@@ -168,7 +202,12 @@ func (p *TaskPlanner) SynthesizeResults(ctx context.Context, node *TaskNode, sum
 	// 记录开始时间
 	startTime := time.Now()
 
-	response, err := llm.SendSyncLLMRequest(messages)
+	// 注入 OutputPath 到 Context (虽然整合阶段可能不需要写文件，但保持一致)
+	if node.OutputPath != "" {
+		ctx = context.WithValue(ctx, mcp.ContextKeyOutputPath, node.OutputPath)
+	}
+
+	response, err := llm.SendSyncLLMRequest(ctx, messages)
 
 	// 计算耗时并记录 LLM 调用
 	durationMs := time.Since(startTime).Milliseconds()
@@ -204,6 +243,11 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 		Attempts:   []VerificationAttempt{},
 	}
 
+	// 注入 OutputPath 到 Context
+	if node.OutputPath != "" {
+		ctx = context.WithValue(ctx, mcp.ContextKeyOutputPath, node.OutputPath)
+	}
+
 	for iteration := 0; iteration < maxVerificationIterations; iteration++ {
 		Display.ShowMessage("🔍", fmt.Sprintf("验证任务结果 (第 %d 次)...", iteration+1))
 		node.AddLog(LogInfo, "verification", fmt.Sprintf("开始第 %d 次验证", iteration+1))
@@ -223,7 +267,7 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 		// 记录开始时间
 		startTime := time.Now()
 
-		response, err := llm.SendSyncLLMRequest(messages)
+		response, err := llm.SendSyncLLMRequest(ctx, messages)
 
 		// 记录 LLM 调用
 		durationMs := time.Since(startTime).Milliseconds()
@@ -304,7 +348,7 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 				{Role: "user", Content: improvePrompt},
 			}
 
-			improvedResult, err := llm.SendSyncLLMRequest(improveMessages)
+			improvedResult, err := llm.SendSyncLLMRequest(ctx, improveMessages)
 			if err != nil {
 				node.AddLog(LogError, "verification", fmt.Sprintf("改进失败: %v", err))
 				continue

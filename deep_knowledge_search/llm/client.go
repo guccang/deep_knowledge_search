@@ -2,6 +2,7 @@ package llm
 
 import (
 	"bytes"
+	"context"
 	"deepknowledgesearch/mcp"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,7 @@ import (
 )
 
 // SendSyncLLMRequest sends a synchronous LLM request with tool calling support
-func SendSyncLLMRequest(messages []Message) (string, error) {
+func SendSyncLLMRequest(ctx context.Context, messages []Message) (string, error) {
 	config := GetConfig()
 	if config.APIKey == "" {
 		return "", fmt.Errorf("LLM API key not configured")
@@ -49,8 +50,8 @@ func SendSyncLLMRequest(messages []Message) (string, error) {
 
 		fmt.Printf("[LLM] Sending request (iteration %d)...\n", iteration+1)
 
-		// Create HTTP request
-		req, err := http.NewRequest("POST", config.BaseURL, bytes.NewBuffer(jsonData))
+		// Create HTTP request with context
+		req, err := http.NewRequestWithContext(ctx, "POST", config.BaseURL, bytes.NewBuffer(jsonData))
 		if err != nil {
 			return "", fmt.Errorf("create request failed: %w", err)
 		}
@@ -120,8 +121,8 @@ func SendSyncLLMRequest(messages []Message) (string, error) {
 				parsedArgs = make(map[string]interface{})
 			}
 
-			// Call tool
-			result := mcp.CallMCPTool(toolName, parsedArgs)
+			// Call tool with context
+			result := mcp.CallMCPTool(ctx, toolName, parsedArgs)
 
 			// Add tool result to messages
 			toolResult := fmt.Sprintf("%v", result.Result)

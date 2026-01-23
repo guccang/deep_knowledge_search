@@ -2,10 +2,17 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
 )
+
+// ContextKey 类型
+type contextKey string
+
+// ContextKeyOutputPath 输出路径的 Context Key
+const ContextKeyOutputPath contextKey = "output_path"
 
 // ToolCall represents a function call from LLM
 type ToolCall struct {
@@ -41,7 +48,7 @@ type MCPToolResponse struct {
 }
 
 // Tool callback function type
-type ToolCallback func(arguments map[string]interface{}) MCPToolResponse
+type ToolCallback func(ctx context.Context, arguments map[string]interface{}) MCPToolResponse
 
 // Tool registry
 var (
@@ -71,7 +78,7 @@ func GetAvailableLLMTools() []LLMTool {
 }
 
 // CallMCPTool calls a registered MCP tool and returns the result
-func CallMCPTool(toolName string, arguments map[string]interface{}) MCPToolResponse {
+func CallMCPTool(ctx context.Context, toolName string, arguments map[string]interface{}) MCPToolResponse {
 	registryMu.RLock()
 	callback, exists := toolRegistry[toolName]
 	registryMu.RUnlock()
@@ -83,7 +90,7 @@ func CallMCPTool(toolName string, arguments map[string]interface{}) MCPToolRespo
 		}
 	}
 
-	return callback(arguments)
+	return callback(ctx, arguments)
 }
 
 // ParseToolArguments parses JSON arguments string to map

@@ -1,69 +1,13 @@
 package mcp
 
 import (
-	"deepknowledgesearch/config"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
-
-// 输出目录配置
-var (
-	docSubDir            = "doc" // 文档子目录
-	currentTaskOutputDir = ""
-	currentNodePath      = "" // 当前节点路径（用于树形目录结构）
-	outputDirMu          sync.RWMutex
-)
-
-// SetTaskOutputDir 设置当前任务的输出目录
-func SetTaskOutputDir(taskFolder string) {
-	outputDirMu.Lock()
-	defer outputDirMu.Unlock()
-	currentTaskOutputDir = taskFolder
-	currentNodePath = "" // 重置节点路径
-}
-
-// SetNodePath 设置当前节点路径（用于树形目录结构）
-func SetNodePath(path string) {
-	outputDirMu.Lock()
-	defer outputDirMu.Unlock()
-	currentNodePath = path
-}
-
-// GetTaskRootDir 获取任务根目录（不包含doc/和节点路径）
-func GetTaskRootDir() string {
-	outputDirMu.RLock()
-	defer outputDirMu.RUnlock()
-	if currentTaskOutputDir != "" {
-		return filepath.Join(config.GetOutputDir(), currentTaskOutputDir)
-	}
-	return ""
-}
-
-// GetCurrentOutputDir 获取当前输出目录（包含doc/和节点路径）
-func GetCurrentOutputDir() string {
-	outputDirMu.RLock()
-	defer outputDirMu.RUnlock()
-	if currentTaskOutputDir != "" {
-		basePath := filepath.Join(config.GetOutputDir(), currentTaskOutputDir, docSubDir)
-		if currentNodePath != "" {
-			return filepath.Join(basePath, currentNodePath)
-		}
-		return basePath
-	}
-	return config.GetOutputDir()
-}
-
-// ClearTaskOutputDir 清除任务输出目录设置
-func ClearTaskOutputDir() {
-	outputDirMu.Lock()
-	defer outputDirMu.Unlock()
-	currentTaskOutputDir = ""
-	currentNodePath = ""
-}
 
 // RegisterDefaultTools registers the default set of tools
 func RegisterDefaultTools() {
@@ -92,7 +36,7 @@ func RegisterDefaultTools() {
 }
 
 // saveToDiskHandler handles the saveToDisk tool call
-func saveToDiskHandler(arguments map[string]interface{}) MCPToolResponse {
+func saveToDiskHandler(ctx context.Context, arguments map[string]interface{}) MCPToolResponse {
 	title, ok := arguments["title"].(string)
 	if !ok || title == "" {
 		return MCPToolResponse{
@@ -109,8 +53,16 @@ func saveToDiskHandler(arguments map[string]interface{}) MCPToolResponse {
 		}
 	}
 
-	// 使用当前任务的输出目录
-	outputDir := GetCurrentOutputDir()
+	// 从 Context 获取输出目录
+	outputDir, ok := ctx.Value(ContextKeyOutputPath).(string)
+	if !ok || outputDir == "" {
+		return MCPToolResponse{
+			Success: false,
+			Error:   "output directory not set in context",
+		}
+	}
+
+	// 确保目录存在
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return MCPToolResponse{
 			Success: false,

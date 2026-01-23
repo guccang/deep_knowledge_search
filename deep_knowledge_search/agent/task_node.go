@@ -63,6 +63,9 @@ type TaskNode struct {
 	Description string `json:"description"`
 	Goal        string `json:"goal"`
 
+	// OutputPath 节点输出目录（绝对路径）
+	OutputPath string `json:"output_path,omitempty"`
+
 	// 执行配置
 	ExecutionMode ExecutionMode `json:"execution_mode"`
 	ToolCalls     []string      `json:"tool_calls,omitempty"`

@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"deepknowledgesearch/mcp"
+	"deepknowledgesearch/config"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -27,15 +27,9 @@ type TaskExecutionLog struct {
 }
 
 // SaveExecutionLog 保存任务执行日志
-func SaveExecutionLog(node *TaskNode) (string, error) {
-	// 获取当前任务的输出根目录（不包含节点路径）
-	outputDir := mcp.GetTaskRootDir()
-	if outputDir == "" {
-		// 如果没有设置，使用默认路径
-		timestamp := time.Now().Format("20060102_150405")
-		sanitizedTitle := sanitizeForFilename(node.Title)
-		outputDir = filepath.Join("output", fmt.Sprintf("%s_%s", sanitizedTitle, timestamp))
-	}
+func SaveExecutionLog(node *TaskNode, taskFolder string) (string, error) {
+	// 获取当前任务的输出根目录
+	outputDir := filepath.Join(config.GetOutputDir(), taskFolder)
 
 	// 日志保存在 output/{task}/logs/ 目录下
 	logsDir := filepath.Join(outputDir, LogSubDir)
@@ -68,7 +62,7 @@ func SaveExecutionLog(node *TaskNode) (string, error) {
 
 	// 生成文章索引
 	indexPath := filepath.Join(logsDir, "INDEX.md")
-	index := GenerateArticleIndex(node, filepath.Base(outputDir))
+	index := GenerateArticleIndex(node, taskFolder)
 	if err := os.WriteFile(indexPath, []byte(index), 0644); err != nil {
 		fmt.Printf("保存索引失败: %v\n", err)
 	}
@@ -276,15 +270,9 @@ type TaskCheckpoint struct {
 }
 
 // SaveCheckpoint 保存任务检查点
-func SaveCheckpoint(node *TaskNode) (string, error) {
+func SaveCheckpoint(node *TaskNode, taskFolder string) (string, error) {
 	// 获取当前任务的输出根目录
-	outputDir := mcp.GetTaskRootDir()
-	if outputDir == "" {
-		// 如果没有设置，使用默认路径
-		timestamp := time.Now().Format("20060102_150405")
-		sanitizedTitle := sanitizeForFilename(node.Title)
-		outputDir = filepath.Join("output", fmt.Sprintf("%s_%s", sanitizedTitle, timestamp))
-	}
+	outputDir := filepath.Join(config.GetOutputDir(), taskFolder)
 
 	// 日志保存在 output/{task}/logs/ 目录下
 	logsDir := filepath.Join(outputDir, LogSubDir)

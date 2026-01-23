@@ -2,8 +2,9 @@ package agent
 
 import (
 	"context"
-	"deepknowledgesearch/mcp"
+	"deepknowledgesearch/config"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -62,8 +63,8 @@ func (e *TaskExecutor) Execute() error {
 		e.taskFolder = taskFolderName // 保存以便任务完成后清理检查点
 	}
 
-	mcp.SetTaskOutputDir(taskFolderName)
-	defer mcp.ClearTaskOutputDir()
+	// mcp.SetTaskOutputDir(taskFolderName) // 移除全局设置
+	// defer mcp.ClearTaskOutputDir()       // 移除全局清理
 
 	Display.TaskStart(e.root.Title)
 	e.root.AddLog(LogInfo, "starting", fmt.Sprintf("开始执行任务: %s", e.root.Title))
@@ -117,7 +118,8 @@ func (e *TaskExecutor) Execute() error {
 	}
 
 	// 生成输出目录的 README 索引
-	outputDir := mcp.GetCurrentOutputDir()
+	// outputDir := mcp.GetCurrentOutputDir() // 移除
+	outputDir := filepath.Join(config.GetOutputDir(), e.taskFolder)
 	if err := GenerateOutputReadme(e.root, outputDir); err != nil {
 		Display.ShowMessage("⚠️", fmt.Sprintf("生成索引失败: %v", err))
 	} else {
@@ -141,7 +143,8 @@ func (e *TaskExecutor) Execute() error {
 
 // saveExecutionLog 保存执行日志
 func (e *TaskExecutor) saveExecutionLog() {
-	logPath, err := SaveExecutionLog(e.root)
+	// 传入 taskFolder
+	logPath, err := SaveExecutionLog(e.root, e.taskFolder)
 	if err != nil {
 		Display.ShowMessage("⚠️", fmt.Sprintf("保存日志失败: %v", err))
 	} else {
@@ -151,6 +154,9 @@ func (e *TaskExecutor) saveExecutionLog() {
 
 // executeNode 执行单个节点
 func (e *TaskExecutor) executeNode(node *TaskNode) error {
+	// 设置节点输出路径
+	e.setNodeOutputPath(node)
+
 	// 暂停检查点
 	e.checkPausePoint()
 
@@ -201,8 +207,8 @@ func (e *TaskExecutor) executeNode(node *TaskNode) error {
 		// 汇总子节点结果
 		e.aggregateChildResults(node)
 	} else {
-		// 叶子节点，设置节点输出路径
-		e.setNodeOutputPath(node)
+		// 叶子节点，设置节点输出路径 (已在开头设置，这里不再需要)
+		// e.setNodeOutputPath(node)
 
 		// 叶子节点，直接执行
 		if err := e.executeLeafNode(node); err != nil {
@@ -475,7 +481,8 @@ func (e *TaskExecutor) checkPausePoint() {
 
 // saveCheckpoint 保存检查点
 func (e *TaskExecutor) saveCheckpoint() error {
-	checkpointPath, err := SaveCheckpoint(e.root)
+	// 传入 taskFolder
+	checkpointPath, err := SaveCheckpoint(e.root, e.taskFolder)
 	if err != nil {
 		return fmt.Errorf("保存检查点失败: %w", err)
 	}
@@ -505,9 +512,16 @@ func joinStrings(strs []string, sep string) string {
 
 // setNodeOutputPath 设置节点输出路径（用于树形目录结构）
 func (e *TaskExecutor) setNodeOutputPath(node *TaskNode) {
-	path := e.buildNodePath(node)
-	fmt.Printf("[DEBUG] setNodeOutputPath: node=%s, path=%s\n", node.Title, path)
-	mcp.SetNodePath(path)
+	nodePath := e.buildNodePath(node)
+	// 计算绝对路径: OutputDir/TaskFolder/doc/NodePath
+	baseDir := filepath.Join(config.GetOutputDir(), e.taskFolder, "doc")
+	if nodePath != "" {
+		node.OutputPath = filepath.Join(baseDir, nodePath)
+	} else {
+		node.OutputPath = baseDir
+	}
+	fmt.Printf("[DEBUG] setNodeOutputPath: node=%s, path=%s\n", node.Title, node.OutputPath)
+	// mcp.SetNodePath(path) // 移除
 }
 
 // buildNodePath 构建节点路径（从根节点的子节点到当前节点的父节点）
