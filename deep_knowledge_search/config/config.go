@@ -146,13 +146,19 @@ func findConfigFile() string {
 // createExampleConfig 创建示例配置
 func createExampleConfig() {
 	example := AppConfig{
-		APIKey:      "your-api-key-here",
-		BaseURL:     "https://api.deepseek.com/v1/chat/completions",
-		Model:       "deepseek-chat",
-		Temperature: 0.3,
-		WebPort:     8080,
-		WebEnabled:  true,
-		OutputDir:   "output",
+		Models: []ModelConfig{
+			{
+				Name:        "deepseek",
+				APIKey:      "your-api-key-here",
+				BaseURL:     "https://api.deepseek.com/v1/chat/completions",
+				Model:       "deepseek-chat",
+				Temperature: 0.3,
+			},
+		},
+		DefaultModel: "deepseek",
+		WebPort:      8080,
+		WebEnabled:   true,
+		OutputDir:    "output",
 	}
 
 	data, _ := json.MarshalIndent(example, "", "  ")

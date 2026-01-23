@@ -23,6 +23,7 @@ func main() {
 	// 加载配置
 	if err := config.LoadConfig(); err != nil {
 		fmt.Fprintf(os.Stderr, "⚠️ 配置加载: %v\n", err)
+		fmt.Println("💡 提示: 请配置 config.json 文件，完成后输入 '/reload' 重新加载配置")
 	}
 	cfg := config.GetConfig()
 
@@ -113,7 +114,7 @@ func main() {
 	}
 
 	// Interactive mode
-	fmt.Println("📝 请输入您的任务描述（输入 'exit' 或 'quit' 退出）:")
+	fmt.Println("📝 请输入您的任务描述（输入 '/exit' 或 '/quit' 退出, '/help' 显示帮助）:")
 	fmt.Println()
 
 	// Auto-completer
@@ -121,6 +122,7 @@ func main() {
 		readline.PcItem("/help"),
 		readline.PcItem("/exit"),
 		readline.PcItem("/quit"),
+		readline.PcItem("/reload"),
 		readline.PcItem("/modules",
 			readline.PcItemDynamic(func(string) []string {
 				cfg := llm.GetConfig()
@@ -184,6 +186,7 @@ func main() {
 				fmt.Println("📚 可用命令:")
 				fmt.Println("  /modules          - 列出所有可用模型")
 				fmt.Println("  /modules <name>   - 切换到指定模型")
+				fmt.Println("  /reload           - 重新加载配置文件")
 				fmt.Println("  /help             - 显示帮助信息")
 				fmt.Println("  /exit, /quit      - 退出程序")
 				continue
@@ -219,6 +222,19 @@ func main() {
 						fmt.Printf("%s%s (%s)\n", prefix, name, m.Model)
 					}
 				}
+				continue
+			case "/reload":
+				fmt.Println("🔄 正在重新加载配置...")
+				if err := config.LoadConfig(); err != nil {
+					fmt.Printf("❌ 配置加载失败: %v\n", err)
+					continue
+				}
+				cfg := config.GetConfig()
+				if err := agent.InitWithConfig(cfg); err != nil {
+					fmt.Printf("❌ Agent重新初始化失败: %v\n", err)
+					continue
+				}
+				fmt.Println("✅ 配置已重新加载")
 				continue
 			default:
 				fmt.Printf("❌ 未知命令: %s\n", cmd)

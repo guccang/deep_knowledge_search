@@ -207,11 +207,21 @@ func findConfigFile() string {
 
 // createExampleConfig 创建示例配置文件
 func createExampleConfig() {
-	exampleConfig := LLMConfig{
-		APIKey:      "your-api-key-here",
-		BaseURL:     "https://api.deepseek.com/v1/chat/completions",
-		Model:       "deepseek-chat",
-		Temperature: 0.3,
+	// Use anonymous struct to match the JSON format expected by the application
+	exampleConfig := struct {
+		Models       []ModelConfig `json:"models"`
+		DefaultModel string        `json:"default_model"`
+	}{
+		Models: []ModelConfig{
+			{
+				Name:        "deepseek",
+				APIKey:      "your-api-key-here",
+				BaseURL:     "https://api.deepseek.com/v1/chat/completions",
+				Model:       "deepseek-chat",
+				Temperature: 0.3,
+			},
+		},
+		DefaultModel: "deepseek",
 	}
 
 	data, err := json.MarshalIndent(exampleConfig, "", "  ")
