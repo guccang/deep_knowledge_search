@@ -614,7 +614,15 @@ async function viewDoc(path) {
         const content = await response.text();
 
         if (response.ok) {
-            viewer.innerHTML = '<div class="markdown-content">' + renderMarkdown(content) + '</div>';
+            // 配置 marked
+            marked.setOptions({
+                gfm: true,
+                breaks: true,
+                headerIds: true,
+                mangle: false,
+                sanitize: false // 信任后端返回的内容
+            });
+            viewer.innerHTML = '<div class="markdown-content">' + marked.parse(content) + '</div>';
         } else {
             viewer.innerHTML = '<div class="empty-state">加载失败</div>';
         }
@@ -623,182 +631,9 @@ async function viewDoc(path) {
     }
 }
 
-// 简单的 Markdown 渲染
-function renderMarkdown(text) {
-    let html = escapeHtml(text);
-    const bt = String.fromCharCode(96); // backtick character
 
-    // 代码块
-    const codeBlockRe = new RegExp(bt + bt + bt + '(\\w*)\\n([\\s\\S]*?)' + bt + bt + bt, 'g');
-    html = html.replace(codeBlockRe, '<pre><code>$2</code></pre>');
+// 移除手动 Markdown 解析函数
 
-    // 行内代码
-    const inlineCodeRe = new RegExp(bt + '([^' + bt + ']+)' + bt, 'g');
-    html = html.replace(inlineCodeRe, '<code>$1</code>');
-
-    // 标题
-    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-    // 粗体和斜体
-    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-    // 表格处理
-    html = renderMarkdownTables(html);
-
-    // 列表
-    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-
-    // 引用
-    html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-
-    // 段落
-    html = html.replace(/\n\n/g, '</p><p>');
-    html = '<p>' + html + '</p>';
-
-    // 清理
-    html = html.replace(/<p><\/p>/g, '');
-    html = html.replace(/<p>(<h[123]>)/g, '$1');
-    html = html.replace(/(<\/h[123]>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<ul>)/g, '$1');
-    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<pre>)/g, '$1');
-    html = html.replace(/(<\/pre>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<blockquote>)/g, '$1');
-    html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
-    html = html.replace(/<p>(<table)/g, '$1');
-    html = html.replace(/(<\/table>)<\/p>/g, '$1');
-
-    return html;
-}
-
-// 渲染 Markdown 表格
-function renderMarkdownTables(html) {
-    const lines = html.split('\n');
-    const result = [];
-    let i = 0;
-
-    while (i < lines.length) {
-        const line = lines[i];
-
-        // 检查是否是表格行（以 | 开头或包含 |）
-        if (line.trim().startsWith('|') || (line.includes('|') && i + 1 < lines.length && lines[i + 1].match(/^\|?[\s\-:|]+\|/))) {
-            // 尝试解析表格
-            const tableLines = [];
-            let j = i;
-
-            // 收集所有表格行
-            while (j < lines.length && (lines[j].includes('|') || lines[j].trim() === '')) {
-                if (lines[j].trim() === '') {
-                    // 空行可能结束表格
-                    if (tableLines.length > 0) break;
-                } else {
-                    tableLines.push(lines[j]);
-                }
-                j++;
-            }
-
-            // 至少需要2行（表头+分隔符）才能构成表格
-            if (tableLines.length >= 2 && tableLines[1].match(/^\|?[\s\-:|]+\|/)) {
-                const tableHtml = parseMarkdownTable(tableLines);
-                if (tableHtml) {
-                    result.push(tableHtml);
-                    i = j;
-                    continue;
-                }
-            }
-        }
-
-        result.push(line);
-        i++;
-    }
-
-    return result.join('\n');
-}
-
-// 解析单个 Markdown 表格
-function parseMarkdownTable(lines) {
-    if (lines.length < 2) return null;
-
-    // 解析表头
-    const headerCells = parseTableRow(lines[0]);
-    if (headerCells.length === 0) return null;
-
-    // 解析对齐方式
-    const alignments = parseTableAlignments(lines[1], headerCells.length);
-    if (!alignments) return null;
-
-    // 构建表格 HTML
-    let tableHtml = '<table class="md-table">\n<thead>\n<tr>';
-    headerCells.forEach((cell, idx) => {
-        const align = alignments[idx] ? ' style="text-align:' + alignments[idx] + '"' : '';
-        tableHtml += '<th' + align + '>' + cell.trim() + '</th>';
-    });
-    tableHtml += '</tr>\n</thead>\n<tbody>';
-
-    // 解析数据行
-    for (let i = 2; i < lines.length; i++) {
-        const cells = parseTableRow(lines[i]);
-        if (cells.length === 0) continue;
-
-        tableHtml += '\n<tr>';
-        for (let j = 0; j < headerCells.length; j++) {
-            const align = alignments[j] ? ' style="text-align:' + alignments[j] + '"' : '';
-            const cellContent = j < cells.length ? cells[j].trim() : '';
-            tableHtml += '<td' + align + '>' + cellContent + '</td>';
-        }
-        tableHtml += '</tr>';
-    }
-
-    tableHtml += '\n</tbody>\n</table>';
-    return tableHtml;
-}
-
-// 解析表格行
-function parseTableRow(line) {
-    // 移除首尾的 |
-    let trimmed = line.trim();
-    if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
-    if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1);
-
-    // 按 | 分割
-    return trimmed.split('|');
-}
-
-// 解析表格对齐方式
-function parseTableAlignments(line, expectedColumns) {
-    const cells = parseTableRow(line);
-    if (cells.length === 0) return null;
-
-    const alignments = [];
-    for (const cell of cells) {
-        const trimmed = cell.trim();
-        // 检查是否是分隔符行
-        if (!trimmed.match(/^:?-+:?$/)) {
-            return null; // 不是有效的分隔符
-        }
-
-        if (trimmed.startsWith(':') && trimmed.endsWith(':')) {
-            alignments.push('center');
-        } else if (trimmed.endsWith(':')) {
-            alignments.push('right');
-        } else if (trimmed.startsWith(':')) {
-            alignments.push('left');
-        } else {
-            alignments.push('');
-        }
-    }
-
-    // 补齐对齐方式
-    while (alignments.length < expectedColumns) {
-        alignments.push('');
-    }
-
-    return alignments;
-}
 
 // =========================================
 // 可恢复任务
