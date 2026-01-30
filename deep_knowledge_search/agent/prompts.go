@@ -72,7 +72,7 @@ var PromptNodeExecution = `执行以下任务并返回结果。
 
 ## 规则
 1. 使用可用工具完成任务
-2. 返回简洁明了的结果
+2. 返回的结果需要简单易懂,概念需要通俗易懂.专业术语需要详细解释。
 3. 如果需要保存内容，使用 saveToDisk 工具`
 
 // PromptResultSynthesis 结果整合提示词模板
