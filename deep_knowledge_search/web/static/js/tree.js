@@ -645,6 +645,9 @@ function renderMarkdown(text) {
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
 
+    // 表格处理
+    html = renderMarkdownTables(html);
+
     // 列表
     html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
     html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
@@ -666,8 +669,135 @@ function renderMarkdown(text) {
     html = html.replace(/(<\/pre>)<\/p>/g, '$1');
     html = html.replace(/<p>(<blockquote>)/g, '$1');
     html = html.replace(/(<\/blockquote>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<table)/g, '$1');
+    html = html.replace(/(<\/table>)<\/p>/g, '$1');
 
     return html;
+}
+
+// 渲染 Markdown 表格
+function renderMarkdownTables(html) {
+    const lines = html.split('\n');
+    const result = [];
+    let i = 0;
+
+    while (i < lines.length) {
+        const line = lines[i];
+
+        // 检查是否是表格行（以 | 开头或包含 |）
+        if (line.trim().startsWith('|') || (line.includes('|') && i + 1 < lines.length && lines[i + 1].match(/^\|?[\s\-:|]+\|/))) {
+            // 尝试解析表格
+            const tableLines = [];
+            let j = i;
+
+            // 收集所有表格行
+            while (j < lines.length && (lines[j].includes('|') || lines[j].trim() === '')) {
+                if (lines[j].trim() === '') {
+                    // 空行可能结束表格
+                    if (tableLines.length > 0) break;
+                } else {
+                    tableLines.push(lines[j]);
+                }
+                j++;
+            }
+
+            // 至少需要2行（表头+分隔符）才能构成表格
+            if (tableLines.length >= 2 && tableLines[1].match(/^\|?[\s\-:|]+\|/)) {
+                const tableHtml = parseMarkdownTable(tableLines);
+                if (tableHtml) {
+                    result.push(tableHtml);
+                    i = j;
+                    continue;
+                }
+            }
+        }
+
+        result.push(line);
+        i++;
+    }
+
+    return result.join('\n');
+}
+
+// 解析单个 Markdown 表格
+function parseMarkdownTable(lines) {
+    if (lines.length < 2) return null;
+
+    // 解析表头
+    const headerCells = parseTableRow(lines[0]);
+    if (headerCells.length === 0) return null;
+
+    // 解析对齐方式
+    const alignments = parseTableAlignments(lines[1], headerCells.length);
+    if (!alignments) return null;
+
+    // 构建表格 HTML
+    let tableHtml = '<table class="md-table">\n<thead>\n<tr>';
+    headerCells.forEach((cell, idx) => {
+        const align = alignments[idx] ? ' style="text-align:' + alignments[idx] + '"' : '';
+        tableHtml += '<th' + align + '>' + cell.trim() + '</th>';
+    });
+    tableHtml += '</tr>\n</thead>\n<tbody>';
+
+    // 解析数据行
+    for (let i = 2; i < lines.length; i++) {
+        const cells = parseTableRow(lines[i]);
+        if (cells.length === 0) continue;
+
+        tableHtml += '\n<tr>';
+        for (let j = 0; j < headerCells.length; j++) {
+            const align = alignments[j] ? ' style="text-align:' + alignments[j] + '"' : '';
+            const cellContent = j < cells.length ? cells[j].trim() : '';
+            tableHtml += '<td' + align + '>' + cellContent + '</td>';
+        }
+        tableHtml += '</tr>';
+    }
+
+    tableHtml += '\n</tbody>\n</table>';
+    return tableHtml;
+}
+
+// 解析表格行
+function parseTableRow(line) {
+    // 移除首尾的 |
+    let trimmed = line.trim();
+    if (trimmed.startsWith('|')) trimmed = trimmed.slice(1);
+    if (trimmed.endsWith('|')) trimmed = trimmed.slice(0, -1);
+
+    // 按 | 分割
+    return trimmed.split('|');
+}
+
+// 解析表格对齐方式
+function parseTableAlignments(line, expectedColumns) {
+    const cells = parseTableRow(line);
+    if (cells.length === 0) return null;
+
+    const alignments = [];
+    for (const cell of cells) {
+        const trimmed = cell.trim();
+        // 检查是否是分隔符行
+        if (!trimmed.match(/^:?-+:?$/)) {
+            return null; // 不是有效的分隔符
+        }
+
+        if (trimmed.startsWith(':') && trimmed.endsWith(':')) {
+            alignments.push('center');
+        } else if (trimmed.endsWith(':')) {
+            alignments.push('right');
+        } else if (trimmed.startsWith(':')) {
+            alignments.push('left');
+        } else {
+            alignments.push('');
+        }
+    }
+
+    // 补齐对齐方式
+    while (alignments.length < expectedColumns) {
+        alignments.push('');
+    }
+
+    return alignments;
 }
 
 // =========================================

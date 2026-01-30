@@ -914,21 +914,35 @@ h1 {
     padding: 0;
 }
 
-.markdown-content table {
+.markdown-content table,
+.markdown-content .md-table {
     width: 100%;
     border-collapse: collapse;
     margin: 15px 0;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    overflow: hidden;
 }
 
 .markdown-content th,
 .markdown-content td {
     border: 1px solid #3a3a5a;
-    padding: 8px 12px;
+    padding: 10px 14px;
     text-align: left;
 }
 
 .markdown-content th {
-    background: rgba(137, 180, 250, 0.1);
+    background: rgba(137, 180, 250, 0.15);
+    color: #89b4fa;
+    font-weight: 600;
+}
+
+.markdown-content tr:nth-child(even) {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.markdown-content tr:hover {
+    background: rgba(137, 180, 250, 0.05);
 }
 
 .markdown-content blockquote {
