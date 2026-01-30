@@ -54,6 +54,9 @@ func (s *Server) Start() error {
 	// 启动 WebSocket hub
 	go s.hub.Run()
 
+	// 检查并生成缺失的排序索引
+	go generateMissingOrderIndexes()
+
 	// 静态文件服务
 	fs := http.FileServer(http.Dir("web/static"))
 	http.Handle("/static/", http.StripPrefix("/static/", fs))
@@ -238,8 +241,25 @@ func (s *Server) handleDocsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 读取所有任务的排序索引
+	orderIndexes := make(map[string]interface{})
+	entries, _ := ioutil.ReadDir(outputDir)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			orderPath := filepath.Join(outputDir, entry.Name(), "doc", ".order.json")
+			data, err := ioutil.ReadFile(orderPath)
+			if err == nil {
+				var orderIndex interface{}
+				if json.Unmarshal(data, &orderIndex) == nil {
+					orderIndexes[entry.Name()] = orderIndex
+				}
+			}
+		}
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"docs": docs,
+		"docs":         docs,
+		"order_index":  orderIndexes,
 	})
 }
 
@@ -364,6 +384,123 @@ func BroadcastEvent(eventType string, data interface{}) {
 	}
 
 	globalServer.hub.Broadcast(msgBytes)
+}
+
+// ===========================================================================
+// 排序索引生成
+// ===========================================================================
+
+// OrderIndex 目录排序索引
+type OrderIndex struct {
+	Order    []string              `json:"order"`
+	Children map[string]OrderIndex `json:"children"`
+}
+
+// generateMissingOrderIndexes 检查并生成缺失的排序索引
+func generateMissingOrderIndexes() {
+	outputDir := "output"
+	entries, err := ioutil.ReadDir(outputDir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		taskDir := filepath.Join(outputDir, entry.Name())
+		orderPath := filepath.Join(taskDir, "doc", ".order.json")
+
+		// 检查 .order.json 是否存在
+		if _, err := os.Stat(orderPath); err == nil {
+			continue // 已存在，跳过
+		}
+
+		// 尝试从 execution.json 生成
+		execPath := filepath.Join(taskDir, "logs", "execution.json")
+		data, err := ioutil.ReadFile(execPath)
+		if err != nil {
+			continue
+		}
+
+		var execData map[string]interface{}
+		if err := json.Unmarshal(data, &execData); err != nil {
+			continue
+		}
+
+		// 构建排序索引
+		orderIndex := buildOrderIndexFromExecution(execData)
+
+		// 确保 doc 目录存在
+		docDir := filepath.Join(taskDir, "doc")
+		if err := os.MkdirAll(docDir, 0755); err != nil {
+			continue
+		}
+
+		// 保存排序索引
+		orderData, err := json.MarshalIndent(orderIndex, "", "  ")
+		if err != nil {
+			continue
+		}
+
+		if err := ioutil.WriteFile(orderPath, orderData, 0644); err != nil {
+			fmt.Printf("[Web] 生成排序索引失败 %s: %v\n", entry.Name(), err)
+		} else {
+			fmt.Printf("[Web] 已生成排序索引: %s\n", entry.Name())
+		}
+	}
+}
+
+// buildOrderIndexFromExecution 从 execution.json 构建排序索引
+func buildOrderIndexFromExecution(data map[string]interface{}) OrderIndex {
+	index := OrderIndex{
+		Order:    []string{},
+		Children: make(map[string]OrderIndex),
+	}
+
+	children, ok := data["children"].([]interface{})
+	if !ok {
+		return index
+	}
+
+	for _, child := range children {
+		childMap, ok := child.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		title, ok := childMap["title"].(string)
+		if !ok {
+			continue
+		}
+
+		// 清理文件名
+		dirName := sanitizeForFilename(title)
+		index.Order = append(index.Order, dirName)
+
+		// 递归处理子节点
+		if childChildren, ok := childMap["children"].([]interface{}); ok && len(childChildren) > 0 {
+			index.Children[dirName] = buildOrderIndexFromExecution(childMap)
+		}
+	}
+
+	return index
+}
+
+// sanitizeForFilename 清理文件名中的非法字符
+func sanitizeForFilename(name string) string {
+	invalid := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|", " "}
+	result := name
+	for _, char := range invalid {
+		result = strings.ReplaceAll(result, char, "_")
+	}
+	// 限制长度
+	runes := []rune(result)
+	if len(runes) > 50 {
+		result = string(runes[:50])
+	}
+	return result
 }
 
 // ===========================================================================

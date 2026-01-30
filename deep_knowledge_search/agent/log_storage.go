@@ -67,6 +67,12 @@ func SaveExecutionLog(node *TaskNode, taskFolder string) (string, error) {
 		fmt.Printf("保存索引失败: %v\n", err)
 	}
 
+	// 生成目录排序索引（用于前端按任务顺序显示）
+	docDir := filepath.Join(outputDir, "doc")
+	if err := GenerateOrderIndex(node, docDir); err != nil {
+		fmt.Printf("保存排序索引失败: %v\n", err)
+	}
+
 	return logsDir, nil
 }
 
@@ -525,6 +531,53 @@ func formatFileSize(size int64) string {
 	} else {
 		return fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
 	}
+}
+
+// OrderIndex 目录排序索引
+type OrderIndex struct {
+	Order    []string              `json:"order"`    // 当前目录下的子目录/文件按执行顺序排列
+	Children map[string]OrderIndex `json:"children"` // 子目录的排序索引
+}
+
+// GenerateOrderIndex 生成目录排序索引（递归）
+func GenerateOrderIndex(node *TaskNode, docDir string) error {
+	// 确保目录存在
+	if err := os.MkdirAll(docDir, 0755); err != nil {
+		return err
+	}
+
+	// 构建排序索引
+	index := buildOrderIndex(node)
+
+	// 保存到 .order.json
+	orderPath := filepath.Join(docDir, ".order.json")
+	data, err := json.MarshalIndent(index, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(orderPath, data, 0644)
+}
+
+// buildOrderIndex 从任务节点构建排序索引
+func buildOrderIndex(node *TaskNode) OrderIndex {
+	index := OrderIndex{
+		Order:    []string{},
+		Children: make(map[string]OrderIndex),
+	}
+
+	// 按任务执行顺序添加子节点
+	for _, child := range node.Children {
+		dirName := sanitizeForFilename(child.Title)
+		index.Order = append(index.Order, dirName)
+
+		// 递归处理子节点
+		if len(child.Children) > 0 {
+			index.Children[dirName] = buildOrderIndex(child)
+		}
+	}
+
+	return index
 }
 
 // PrintExecutionLog 打印执行日志（用于调试）

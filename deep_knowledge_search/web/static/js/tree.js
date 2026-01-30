@@ -522,6 +522,7 @@ function convertHistoryToTree(data) {
 // 文档浏览
 // =========================================
 let docsData = [];
+let docsOrderIndex = {};  // 排序索引
 let selectedDocPath = null;
 
 async function loadDocs() {
@@ -529,6 +530,7 @@ async function loadDocs() {
         const response = await fetch('/api/docs');
         const data = await response.json();
         docsData = data.docs || [];
+        docsOrderIndex = data.order_index || {};
         renderDocTree();
     } catch (e) {
         document.getElementById('docTree').innerHTML = '<div class="empty-state">加载失败</div>';
@@ -556,19 +558,78 @@ function renderDocTree() {
         });
     });
 
-    container.innerHTML = renderDocFolder(tree, '');
+    container.innerHTML = renderDocFolder(tree, '', null);
 }
 
-function renderDocFolder(folder, prefix) {
+// 获取排序顺序
+function getOrderForPath(pathParts) {
+    if (!pathParts || pathParts.length === 0) return null;
+
+    // 第一级是任务文件夹
+    const taskFolder = pathParts[0];
+    if (!docsOrderIndex[taskFolder]) return null;
+
+    // 如果是 doc 目录，获取其下的排序
+    let orderData = docsOrderIndex[taskFolder];
+
+    // 跳过任务文件夹，从 doc 开始查找
+    for (let i = 1; i < pathParts.length; i++) {
+        const part = pathParts[i];
+        if (part === 'doc') continue;
+        if (orderData.children && orderData.children[part]) {
+            orderData = orderData.children[part];
+        } else {
+            break;
+        }
+    }
+
+    return orderData ? orderData.order : null;
+}
+
+function renderDocFolder(folder, prefix, parentParts) {
     let html = '';
-    const entries = Object.entries(folder).sort((a, b) => {
-        const aIsDir = Object.keys(a[1]._children).length > 0;
-        const bIsDir = Object.keys(b[1]._children).length > 0;
-        if (aIsDir !== bIsDir) return bIsDir - aIsDir;
-        return a[0].localeCompare(b[0]);
-    });
+    let entries = Object.entries(folder);
+
+    // 获取当前路径的排序顺序
+    const pathParts = prefix ? prefix.split(/[\/\\]/) : [];
+    const order = getOrderForPath(pathParts);
+
+    // 如果有排序索引，按索引排序
+    if (order && order.length > 0) {
+        entries.sort((a, b) => {
+            const aIsDir = Object.keys(a[1]._children).length > 0 || (a[1]._info && a[1]._info.is_dir);
+            const bIsDir = Object.keys(b[1]._children).length > 0 || (b[1]._info && b[1]._info.is_dir);
+
+            // 目录优先
+            if (aIsDir !== bIsDir) return bIsDir - aIsDir;
+
+            // 按排序索引排序
+            const aIdx = order.indexOf(a[0]);
+            const bIdx = order.indexOf(b[0]);
+
+            // 都在索引中，按索引顺序
+            if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
+            // 只有 a 在索引中，a 排前面
+            if (aIdx !== -1) return -1;
+            // 只有 b 在索引中，b 排前面
+            if (bIdx !== -1) return 1;
+            // 都不在索引中，按字母顺序
+            return a[0].localeCompare(b[0]);
+        });
+    } else {
+        // 没有排序索引，按默认规则（目录优先，字母顺序）
+        entries.sort((a, b) => {
+            const aIsDir = Object.keys(a[1]._children).length > 0 || (a[1]._info && a[1]._info.is_dir);
+            const bIsDir = Object.keys(b[1]._children).length > 0 || (b[1]._info && b[1]._info.is_dir);
+            if (aIsDir !== bIsDir) return bIsDir - aIsDir;
+            return a[0].localeCompare(b[0]);
+        });
+    }
 
     entries.forEach(([name, data]) => {
+        // 跳过隐藏文件（如 .order.json）
+        if (name.startsWith('.')) return;
+
         const path = prefix ? prefix + '/' + name : name;
         const hasChildren = Object.keys(data._children).length > 0;
         const isDir = data._info && data._info.is_dir;
@@ -576,7 +637,7 @@ function renderDocFolder(folder, prefix) {
         if (isDir || hasChildren) {
             html += '<div class="doc-item folder" onclick="toggleDocFolder(this)">📁 ' + escapeHtml(name) + '</div>';
             html += '<div class="doc-folder-items">';
-            html += renderDocFolder(data._children, path);
+            html += renderDocFolder(data._children, path, pathParts);
             html += '</div>';
         } else {
             const isSelected = selectedDocPath === path;
