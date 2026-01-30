@@ -524,28 +524,23 @@ func (e *TaskExecutor) setNodeOutputPath(node *TaskNode) {
 	// mcp.SetNodePath(path) // 移除
 }
 
-// buildNodePath 构建节点路径（从根节点的子节点到当前节点的父节点）
+// buildNodePath 构建节点路径（从根节点的直接子节点到当前节点）
 func (e *TaskExecutor) buildNodePath(node *TaskNode) string {
-	// 收集从父节点向上到根节点直接子节点的路径
+	// 根节点不需要路径
+	if node.ID == e.root.ID {
+		return ""
+	}
+
+	// 收集从当前节点向上到根节点的路径（不包含根节点）
 	var pathParts []string
-	current := e.findParentNode(node) // 从父节点开始
+	current := node
 
 	for current != nil && current.ID != e.root.ID {
 		pathParts = append([]string{sanitizeForFilename(current.Title)}, pathParts...)
 		current = e.findParentNode(current)
 	}
 
-	// 如果路径为空但父节点不是根节点，说明父节点就是根的直接子节点
-	// 这种情况需要包含父节点作为目录
 	if len(pathParts) == 0 {
-		parent := e.findParentNode(node)
-		if parent != nil && parent.ID == e.root.ID {
-			// 父节点是根节点，直接在doc下生成
-			return ""
-		} else if parent != nil {
-			// 父节点不是根节点但路径为空，应该不会发生
-			return sanitizeForFilename(parent.Title)
-		}
 		return ""
 	}
 

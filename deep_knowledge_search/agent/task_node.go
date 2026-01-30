@@ -113,10 +113,12 @@ type VerificationInfo struct {
 
 // VerificationAttempt 单次验证尝试
 type VerificationAttempt struct {
-	Iteration int    `json:"iteration"`
-	Passed    bool   `json:"passed"`
-	Feedback  string `json:"feedback"`
-	Timestamp string `json:"timestamp"`
+	Iteration       int    `json:"iteration"`
+	Passed          bool   `json:"passed"`
+	Feedback        string `json:"feedback"`
+	Timestamp       string `json:"timestamp"`
+	ImprovedResult  string `json:"improved_result,omitempty"`  // 改进后的结果
+	ImproveDuration int64  `json:"improve_duration,omitempty"` // 改进耗时（毫秒）
 }
 
 // LLMCallRecord LLM 调用记录

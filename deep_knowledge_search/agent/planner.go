@@ -328,6 +328,8 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 
 		// 如果还有迭代机会，尝试改进
 		if iteration < maxVerificationIterations-1 {
+			Display.ShowMessage("🔧", fmt.Sprintf("根据反馈改进结果 (第 %d 次)...", iteration+1))
+
 			// 让 LLM 根据反馈改进结果
 			improvePrompt := fmt.Sprintf(`根据以下验证反馈改进任务结果。
 
@@ -348,14 +350,43 @@ func (p *TaskPlanner) VerifyResult(ctx context.Context, node *TaskNode, result s
 				{Role: "user", Content: improvePrompt},
 			}
 
+			// 记录改进开始时间
+			improveStartTime := time.Now()
+
 			improvedResult, err := llm.SendSyncLLMRequest(ctx, improveMessages)
+
+			// 计算改进耗时
+			improveDurationMs := time.Since(improveStartTime).Milliseconds()
+
+			// 记录改进的 LLM 调用
+			improveLLMMessages := []map[string]interface{}{
+				{"role": "system", "content": PromptExecutionSystem},
+				{"role": "user", "content": improvePrompt},
+			}
+			node.AddLLMCall(fmt.Sprintf("improve_%d", iteration+1), improveLLMMessages, improvedResult, improveStartTime, improveDurationMs)
+
 			if err != nil {
 				node.AddLog(LogError, "verification", fmt.Sprintf("改进失败: %v", err))
+				// 更新当前验证尝试，记录改进失败
+				if len(node.Verification.Attempts) > 0 {
+					lastIdx := len(node.Verification.Attempts) - 1
+					node.Verification.Attempts[lastIdx].ImprovedResult = fmt.Sprintf("改进失败: %v", err)
+					node.Verification.Attempts[lastIdx].ImproveDuration = improveDurationMs
+				}
+				Display.BroadcastTree(findRootNode(node))
 				continue
 			}
 
+			// 更新当前验证尝试，记录改进结果
+			if len(node.Verification.Attempts) > 0 {
+				lastIdx := len(node.Verification.Attempts) - 1
+				node.Verification.Attempts[lastIdx].ImprovedResult = p.summarizeResponse(improvedResult)
+				node.Verification.Attempts[lastIdx].ImproveDuration = improveDurationMs
+			}
+
 			currentResult = improvedResult
-			node.AddLog(LogInfo, "verification", "已根据反馈改进结果")
+			node.AddLog(LogInfo, "verification", fmt.Sprintf("已根据反馈改进结果 (耗时 %dms)", improveDurationMs))
+			Display.BroadcastTree(findRootNode(node))
 		}
 	}
 
