@@ -69,6 +69,9 @@ func (e *TaskExecutor) Execute() error {
 	Display.TaskStart(e.root.Title)
 	e.root.AddLog(LogInfo, "starting", fmt.Sprintf("开始执行任务: %s", e.root.Title))
 
+	// Phase 0: 预检与特性清单
+	e.preflight()
+
 	// 启动周期性检查点保存（每30秒）
 	checkpointTicker := time.NewTicker(30 * time.Second)
 	go func() {
@@ -221,6 +224,28 @@ func (e *TaskExecutor) executeNode(node *TaskNode) error {
 	node.SetProgress(100)
 	node.AddLog(LogInfo, "completed", fmt.Sprintf("执行完成: %s", node.Title))
 	Display.NodeComplete(node)
+
+	// 保存进度条目
+	if e.taskFolder != "" {
+		completed, remaining := CollectNodeStatus(e.root)
+		summary := ""
+		if node.Result != nil {
+			summary = node.Result.Summary
+		}
+		entry := ProgressEntry{
+			Timestamp:      time.Now(),
+			SessionID:      e.root.ID,
+			NodeID:         node.ID,
+			NodeTitle:      node.Title,
+			Action:         "completed",
+			NodesCompleted: completed,
+			NodesRemaining: remaining,
+			Summary:        summary,
+		}
+		if err := SaveProgressEntry(e.taskFolder, entry); err != nil {
+			Display.ShowMessage("⚠️", fmt.Sprintf("保存进度失败: %v", err))
+		}
+	}
 
 	// 广播完整树结构确保前端同步
 	Display.BroadcastTree(e.root)
@@ -477,6 +502,58 @@ func (e *TaskExecutor) checkPausePoint() {
 	default:
 		// 没有暂停信号，继续执行
 	}
+}
+
+// preflight 预检阶段：加载进度、特性清单，注入上下文
+func (e *TaskExecutor) preflight() {
+	// 1. 加载进度文件
+	if e.taskFolder != "" {
+		if pf, err := LoadProgress(e.taskFolder); err == nil && len(pf.Entries) > 0 {
+			progressCtx := BuildProgressContext(pf)
+			if progressCtx != "" {
+				e.root.Context.Variables["progress_context"] = progressCtx
+				Display.ShowMessage("📋", fmt.Sprintf("已加载 %d 条进度记录", len(pf.Entries)))
+			}
+		}
+	}
+
+	// 2. 加载或生成特性清单
+	e.loadOrGenerateFeatureList()
+}
+
+// loadOrGenerateFeatureList 加载已有特性清单，或为新任务生成
+func (e *TaskExecutor) loadOrGenerateFeatureList() {
+	if e.taskFolder == "" {
+		return
+	}
+
+	// 尝试加载已有特性清单
+	fl, err := LoadFeatureList(e.taskFolder)
+	if err == nil && fl != nil && len(fl.Features) > 0 {
+		flCtx := BuildFeatureListContext(fl)
+		e.root.Context.Variables["feature_list"] = flCtx
+		total, passed, remaining := GetFeatureStats(fl)
+		Display.ShowMessage("📋", fmt.Sprintf("特性清单: %d/%d 已完成, %d 待完成", passed, total, remaining))
+		return
+	}
+
+	// 新任务：用 LLM 生成特性清单
+	Display.ShowMessage("🔍", "正在生成特性清单...")
+	fl, err = GenerateFeatureList(e.ctx, e.root.Description)
+	if err != nil {
+		Display.ShowMessage("⚠️", fmt.Sprintf("生成特性清单失败: %v", err))
+		return
+	}
+
+	fl.TaskID = e.root.ID
+
+	if err := SaveFeatureList(e.taskFolder, fl); err != nil {
+		Display.ShowMessage("⚠️", fmt.Sprintf("保存特性清单失败: %v", err))
+	}
+
+	flCtx := BuildFeatureListContext(fl)
+	e.root.Context.Variables["feature_list"] = flCtx
+	Display.ShowMessage("✅", fmt.Sprintf("已生成 %d 个特性清单项", len(fl.Features)))
 }
 
 // saveCheckpoint 保存检查点

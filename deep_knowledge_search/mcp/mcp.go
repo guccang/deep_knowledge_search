@@ -105,5 +105,6 @@ func ParseToolArguments(argsJSON string) (map[string]interface{}, error) {
 // Init initializes the MCP module and registers default tools
 func Init() {
 	RegisterDefaultTools()
+	RegisterExtendedTools()
 	fmt.Println("[MCP] Initialized with", len(toolRegistry), "tools")
 }

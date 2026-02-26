@@ -1,3 +1,5 @@
 dks.exe~
 *.exe
 CLAUDE.md
+.claude/
+.specify/

@@ -99,6 +99,65 @@ var PromptVerificationSystem = `你是一个任务验证专家。你的职责是
 3. 如果验证不通过，说明原因并给出改进建议
 4. 验证标准要合理，不要过于苛刻`
 
+// PromptInitializerSystem 初始化 Agent 系统提示词（首次运行或恢复时使用）
+var PromptInitializerSystem = `你是一个任务初始化专家。在开始执行任何工作之前，你需要了解当前环境状态。
+
+职责:
+1. 分析之前的进度记录，了解哪些工作已完成
+2. 检查已有的输出文件是否完整
+3. 确定接下来应该优先处理的任务
+4. 识别任何异常状态（如中断的任务、不完整的输出）
+
+输出要求:
+- 简明扼要地总结当前状态
+- 列出可以继续的工作项
+- 标注需要修复的问题（如有）`
+
+// PromptPreflightCheck 预检提示词模板
+var PromptPreflightCheck = `请分析当前任务的执行状态并给出建议。
+
+## 任务信息
+标题: %s
+描述: %s
+
+## 已有进度
+%s
+
+## 已有输出文件
+%s
+
+## 请回答
+1. 之前完成了哪些工作？
+2. 哪些工作还未开始？
+3. 是否有需要修复的问题？
+4. 建议的下一步行动是什么？`
+
+// PromptFeatureListGeneration 特性清单生成提示词模板
+var PromptFeatureListGeneration = `请分析以下任务描述，生成一个详细的特性清单。
+
+## 任务描述
+%s
+
+## 规则
+1. 将任务分解为 5-20 个具体的、可验证的特性点
+2. 每个特性必须可独立验证完成
+3. 按优先级排序（1为最高）
+4. 分类：functional（功能性）、quality（质量）、documentation（文档）
+
+## 返回 JSON 格式（无 markdown 代码块）
+{
+  "features": [
+    {
+      "id": "F001",
+      "category": "functional",
+      "description": "特性描述",
+      "steps": ["验证步骤1", "验证步骤2"],
+      "priority": 1,
+      "passes": false
+    }
+  ]
+}`
+
 // PromptVerification 验证提示词模板
 var PromptVerification = `请验证以下任务执行结果是否符合目标要求。
 

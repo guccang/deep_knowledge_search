@@ -27,11 +27,17 @@ func SendSyncLLMRequest(ctx context.Context, messages []Message) (string, error)
 	currentMessages := make([]Message, len(messages))
 	copy(currentMessages, messages)
 
-	// Tool calling loop
-	maxIterations := 10
+	// Compaction config
+	compactionCfg := DefaultCompactionConfig()
+
+	// Tool calling loop (raised from 10 to 30 with compaction support)
+	maxIterations := 30
 	var finalResponse string
 
 	for iteration := 0; iteration < maxIterations; iteration++ {
+		// Compact messages if they exceed the threshold
+		currentMessages = CompactMessages(ctx, currentMessages, compactionCfg)
+
 		// Convert messages to API format
 		apiMessages := convertMessagesToAPI(currentMessages)
 
